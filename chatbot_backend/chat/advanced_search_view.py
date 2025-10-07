@@ -313,7 +313,7 @@ class IntraVideoSearchView(APIView):
             return Response({'error': str(e)}, status=500)
     
     def _perform_intra_video_search(self, detection_db, meta_db, query, criteria):
-        """영상 내 검색 수행"""
+        """🔥 영상 내 검색 수행 (하이브리드 분석 결과 지원)"""
         results = []
         query_lower = query.lower()
         
@@ -325,8 +325,9 @@ class IntraVideoSearchView(APIView):
             
             for obj in objects:
                 if obj.get('class') == 'person':
-                    # 주황색 상의 남성 검색
+                    # 조건에 맞는지 확인
                     if self._matches_person_criteria(obj, query_lower, criteria):
+                        # 🔥 하이브리드 분석 결과 포함
                         result = {
                             'timestamp': timestamp,
                             'frame_id': frame.get('image_id', 1),
@@ -334,63 +335,147 @@ class IntraVideoSearchView(APIView):
                             'bbox': obj.get('bbox', [0, 0, 0, 0]),
                             'confidence': obj.get('confidence', 0.0),
                             'attributes': obj.get('attributes', {}),
+                            'clothing_colors': obj.get('clothing_colors', {}),  # 추가
                             'scene_context': obj.get('scene_context', {}),
-                            'description': self._generate_person_description(obj, query_lower)
+                            'description': self._generate_person_description(obj, query_lower),
+                            'analysis_source': obj.get('analysis_source', 'unknown')  # 추가
                         }
                         results.append(result)
         
         # 시간순으로 정렬
         results.sort(key=lambda x: x['timestamp'])
+        
+        logger.info(f"🔍 검색 결과: '{query}' → {len(results)}개 발견")
+        
         return results
     
     def _matches_person_criteria(self, person_obj, query_lower, criteria):
-        """사람 객체가 검색 조건에 맞는지 확인"""
+        """🔥 사람 객체가 검색 조건에 맞는지 확인 (하이브리드 분석 결과 지원)"""
         attributes = person_obj.get('attributes', {})
+        
+        # 🔥 하이브리드 분석의 clothing_colors 필드 우선 사용
+        clothing_colors = person_obj.get('clothing_colors', {})
+        upper_color = clothing_colors.get('upper', '').lower()
+        lower_color = clothing_colors.get('lower', '').lower()
+        
+        # 폴백: 기존 clothing 필드도 확인
         clothing = attributes.get('clothing', {})
+        if not upper_color or upper_color == 'unknown':
+            upper_color = clothing.get('upper_color', clothing.get('dominant_color', '')).lower()
+        if not lower_color or lower_color == 'unknown':
+            lower_color = clothing.get('lower_color', '').lower()
         
-        # 주황색 상의 검색
-        if any(keyword in query_lower for keyword in ['주황', 'orange', '주황색']):
-            dominant_color = clothing.get('dominant_color', '').lower()
-            if 'orange' in dominant_color:
-                return True
+        # 색상 검색 (모든 색상 지원)
+        color_keywords = {
+            '빨강': ['red', '빨간', '빨강'],
+            '주황': ['orange', '주황', '주황색'],
+            '노랑': ['yellow', '노란', '노랑'],
+            '초록': ['green', '초록', '녹색'],
+            '파랑': ['blue', '파란', '파랑', '청색'],
+            '보라': ['purple', '보라', '자주'],
+            '분홍': ['pink', '분홍', '핑크'],
+            '검정': ['black', '검은', '검정'],
+            '하양': ['white', '흰', '하양', '백색'],
+            '회색': ['gray', 'grey', '회색']
+        }
         
-        # 남성 검색
+        for color_name, keywords in color_keywords.items():
+            if any(kw in query_lower for kw in keywords):
+                target_color = keywords[0]  # 영어 색상명
+                if target_color in upper_color or target_color in lower_color:
+                    return True
+        
+        # 성별 검색
         if any(keyword in query_lower for keyword in ['남성', '남자', 'man', 'male']):
             gender = attributes.get('gender', '').lower()
             if 'man' in gender or 'male' in gender:
                 return True
         
+        if any(keyword in query_lower for keyword in ['여성', '여자', 'woman', 'female']):
+            gender = attributes.get('gender', '').lower()
+            if 'woman' in gender or 'female' in gender:
+                return True
+        
         # 나이 검색
-        if any(keyword in query_lower for keyword in ['성인', 'adult', '어린이', 'child']):
+        if any(keyword in query_lower for keyword in ['성인', 'adult', '어린이', 'child', '청소년', 'teenager']):
             age = attributes.get('age', '').lower()
             if 'adult' in query_lower and 'adult' in age:
                 return True
             elif 'child' in query_lower and 'child' in age:
                 return True
+            elif 'teenager' in query_lower and 'teenager' in age:
+                return True
         
         return False
     
     def _generate_person_description(self, person_obj, query_lower):
-        """사람 객체 설명 생성"""
+        """🔥 사람 객체 설명 생성 (하이브리드 분석 결과 지원)"""
         attributes = person_obj.get('attributes', {})
-        clothing = attributes.get('clothing', {})
         
+        # 🔥 하이브리드 분석 결과 사용
+        clothing_colors = person_obj.get('clothing_colors', {})
+        upper_color = clothing_colors.get('upper', 'unknown')
+        lower_color = clothing_colors.get('lower', 'unknown')
+        
+        # 성별/나이 정보
         gender = attributes.get('gender', 'unknown')
         age = attributes.get('age', 'unknown')
-        dominant_color = clothing.get('dominant_color', 'unknown')
+        estimated_age = attributes.get('estimated_age', 0)
+        emotion = attributes.get('emotion', 'neutral')
+        
+        # 분석 소스
+        analysis_source = person_obj.get('analysis_source', 'unknown')
         
         description_parts = []
         
-        if '주황' in query_lower or 'orange' in query_lower:
-            description_parts.append(f"주황색 옷")
+        # 색상 정보 추가 (한국어로 변환)
+        color_map = {
+            'red': '빨간색', 'orange': '주황색', 'yellow': '노란색',
+            'green': '초록색', 'blue': '파란색', 'purple': '보라색',
+            'pink': '분홍색', 'black': '검은색', 'white': '흰색', 'gray': '회색'
+        }
         
-        if '남성' in query_lower or '남자' in query_lower:
-            description_parts.append(f"{gender}")
+        if upper_color and upper_color != 'unknown':
+            color_kr = color_map.get(upper_color, upper_color)
+            description_parts.append(f"{color_kr} 상의")
         
-        if '성인' in query_lower or 'adult' in query_lower:
-            description_parts.append(f"{age}")
+        if lower_color and lower_color != 'unknown':
+            color_kr = color_map.get(lower_color, lower_color)
+            description_parts.append(f"{color_kr} 하의")
         
-        return f"{', '.join(description_parts)}" if description_parts else "사람"
+        # 성별 정보
+        if gender and gender != 'unknown':
+            gender_kr = '남성' if 'man' in gender or 'male' in gender else '여성' if 'woman' in gender or 'female' in gender else gender
+            description_parts.append(gender_kr)
+        
+        # 나이 정보
+        if estimated_age and estimated_age > 0:
+            description_parts.append(f"{estimated_age}세")
+        elif age and age != 'unknown':
+            age_kr = {
+                'child': '어린이', 'teenager': '청소년',
+                'young_adult': '청년', 'middle_aged': '중년',
+                'elderly': '노인'
+            }.get(age, age)
+            description_parts.append(age_kr)
+        
+        # 감정 정보 (옵션)
+        if emotion and emotion != 'neutral' and emotion != 'unknown':
+            emotion_kr = {
+                'happy': '행복', 'sad': '슬픔', 'angry': '화남',
+                'fear': '두려움', 'surprise': '놀람', 'disgust': '혐오'
+            }.get(emotion, emotion)
+            description_parts.append(f"({emotion_kr})")
+        
+        # 분석 출처 표시
+        source_note = {
+            'DeepFace': '✓AI분석',
+            'GPT-4V': '✓GPT분석',
+            'fallback': ''
+        }.get(analysis_source, '')
+        
+        desc = ', '.join(description_parts) if description_parts else "사람"
+        return f"{desc} {source_note}".strip()
 
 
 class TemporalAnalysisView(APIView):
@@ -462,15 +547,25 @@ class TemporalAnalysisView(APIView):
             return {'error': '지원하지 않는 분석 타입입니다.'}
     
     def _analyze_gender_distribution(self, frames):
-        """성비 분포 분석"""
+        """성비 분포 분석 - 개선된 버전 (색상 정보 포함)"""
         gender_count = {'male': 0, 'female': 0, 'unknown': 0}
         total_persons = 0
+        
+        # 의상 색상 분포 수집 (상의/하의 분리)
+        upper_clothing_colors = {}
+        lower_clothing_colors = {}
+        
+        # 신뢰도 정보
+        confidence_scores = []
         
         for frame in frames:
             objects = frame.get('objects', [])
             for obj in objects:
                 if obj.get('class') == 'person':
-                    gender = obj.get('attributes', {}).get('gender', 'unknown').lower()
+                    attributes = obj.get('attributes', {})
+                    
+                    # 성별 정보
+                    gender = attributes.get('gender', 'unknown').lower()
                     if 'man' in gender or 'male' in gender:
                         gender_count['male'] += 1
                     elif 'woman' in gender or 'female' in gender:
@@ -478,6 +573,24 @@ class TemporalAnalysisView(APIView):
                     else:
                         gender_count['unknown'] += 1
                     total_persons += 1
+                    
+                    # 신뢰도 정보
+                    confidence = obj.get('confidence', 0)
+                    if confidence > 0:
+                        confidence_scores.append(confidence)
+                    
+                    # 의상 색상 정보
+                    clothing = attributes.get('clothing', {})
+                    if isinstance(clothing, dict):
+                        dominant_color = clothing.get('dominant_color', 'unknown')
+                        if dominant_color and dominant_color != 'unknown':
+                            # 상의 색상으로 간주
+                            upper_clothing_colors[dominant_color] = upper_clothing_colors.get(dominant_color, 0) + 1
+                        
+                        # 하의 색상 (있는 경우)
+                        lower_color = clothing.get('lower_color', 'unknown')
+                        if lower_color and lower_color != 'unknown':
+                            lower_clothing_colors[lower_color] = lower_clothing_colors.get(lower_color, 0) + 1
         
         # 비율 계산
         if total_persons > 0:
@@ -489,11 +602,27 @@ class TemporalAnalysisView(APIView):
         else:
             gender_ratio = {'male': 0, 'female': 0, 'unknown': 0}
         
+        # 평균 신뢰도
+        avg_confidence = round(sum(confidence_scores) / len(confidence_scores), 3) if confidence_scores else 0.0
+        
+        # 정확도 안내 메시지
+        if gender_count['unknown'] > total_persons * 0.8:
+            accuracy_note = '⚠️ 미상 비율이 높습니다. 영상 해상도나 각도를 확인하세요.'
+        elif avg_confidence > 0.7:
+            accuracy_note = '✓ 신뢰할 수 있는 분석 결과'
+        else:
+            accuracy_note = 'ℹ️ 보통 신뢰도'
+        
         return {
             'total_persons': total_persons,
             'gender_count': gender_count,
             'gender_ratio': gender_ratio,
-            'analysis_summary': f"총 {total_persons}명 중 남성 {gender_ratio['male']}%, 여성 {gender_ratio['female']}%"
+            'upper_clothing_colors': dict(sorted(upper_clothing_colors.items(), key=lambda x: x[1], reverse=True)),
+            'lower_clothing_colors': dict(sorted(lower_clothing_colors.items(), key=lambda x: x[1], reverse=True)),
+            'average_confidence': avg_confidence,
+            'accuracy_note': accuracy_note,
+            'data_source': '영상 분석 결과 (메타데이터)',
+            'analysis_summary': f"총 {total_persons}명 중 남성 {gender_ratio['male']}%, 여성 {gender_ratio['female']}% {accuracy_note}"
         }
     
     def _analyze_age_distribution(self, frames):

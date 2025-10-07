@@ -1,5 +1,5 @@
 from django.urls import path, include
-from .views import ChatView, google_callback, kakao_callback, naver_callback, VideoUploadView, VideoChatView, VideoAnalysisView, VideoListView, FrameImageView, VideoSummaryView, VideoHighlightView
+from .views import ChatView, google_callback, kakao_callback, naver_callback, VideoUploadView, VideoChatView, VideoAnalysisView, VideoListView, VideoDeleteView, VideoRenameView, FrameImageView, VideoSummaryView, VideoHighlightView
 from .video_search_view import VideoSearchView
 from .advanced_search_view import InterVideoSearchView, IntraVideoSearchView, TemporalAnalysisView
 from .integrated_views import integrated_chat_view, get_chat_history, verify_fact_view, IntegratedChatAPIView
@@ -16,6 +16,8 @@ urlpatterns = [
     # 영상 관련 API
     path('api/video/upload/', VideoUploadView.as_view(), name='video_upload'),
     path('api/video/list/', VideoListView.as_view(), name='video_list'),
+    path('api/video/<int:video_id>/delete/', VideoDeleteView.as_view(), name='video_delete'),
+    path('api/video/<int:video_id>/rename/', VideoRenameView.as_view(), name='video_rename'),
     path('api/video/<int:video_id>/analysis/', VideoAnalysisView.as_view(), name='video_analysis'),
     path('api/video/<int:video_id>/chat/', VideoChatView.as_view(), name='video_chat'),
     path('api/video/chat/sessions/', VideoChatView.as_view(), name='video_chat_sessions'),

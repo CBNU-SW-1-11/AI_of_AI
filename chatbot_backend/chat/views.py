@@ -1875,6 +1875,103 @@ class VideoListView(APIView):
                 'error': f'비디오 목록 조회 중 오류 발생: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+class VideoDeleteView(APIView):
+    """영상 삭제 API"""
+    permission_classes = [AllowAny]
+    
+    def delete(self, request, video_id):
+        try:
+            video = Video.objects.get(id=video_id)
+            
+            # 파일 삭제
+            if video.file and os.path.exists(video.file.path):
+                try:
+                    os.remove(video.file.path)
+                    logger.info(f"✅ 영상 파일 삭제: {video.file.path}")
+                except Exception as e:
+                    logger.warning(f"영상 파일 삭제 실패: {e}")
+            
+            # 분석 결과 파일 삭제
+            if video.analysis_json_path:
+                json_path = os.path.join(settings.MEDIA_ROOT, video.analysis_json_path)
+                if os.path.exists(json_path):
+                    try:
+                        os.remove(json_path)
+                        logger.info(f"✅ 분석 결과 파일 삭제: {json_path}")
+                    except Exception as e:
+                        logger.warning(f"분석 결과 파일 삭제 실패: {e}")
+            
+            # 프레임 이미지 파일 삭제
+            if video.frame_images_path:
+                frame_paths = video.frame_images_path.split(',')
+                for path in frame_paths:
+                    full_path = os.path.join(settings.MEDIA_ROOT, path.strip())
+                    if os.path.exists(full_path):
+                        try:
+                            os.remove(full_path)
+                        except Exception as e:
+                            logger.warning(f"프레임 이미지 삭제 실패: {e}")
+            
+            # DB에서 삭제
+            video_name = video.original_name
+            video.delete()
+            
+            logger.info(f"✅ 영상 삭제 완료: {video_name} (ID: {video_id})")
+            
+            return Response({
+                'message': f'영상 "{video_name}"이(가) 삭제되었습니다.',
+                'video_id': video_id
+            })
+            
+        except Video.DoesNotExist:
+            return Response({
+                'error': '영상을 찾을 수 없습니다.'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"❌ 영상 삭제 오류: {e}")
+            return Response({
+                'error': f'영상 삭제 중 오류 발생: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class VideoRenameView(APIView):
+    """영상 이름 변경 API"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request, video_id):
+        try:
+            video = Video.objects.get(id=video_id)
+            new_name = request.data.get('original_name', '').strip()
+            
+            if not new_name:
+                return Response({
+                    'error': '새 이름을 입력해주세요.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            old_name = video.original_name
+            video.original_name = new_name
+            video.save()
+            
+            logger.info(f"✅ 영상 이름 변경: {old_name} → {new_name} (ID: {video_id})")
+            
+            return Response({
+                'message': f'영상 이름이 "{new_name}"(으)로 변경되었습니다.',
+                'video_id': video_id,
+                'new_name': new_name
+            })
+            
+        except Video.DoesNotExist:
+            return Response({
+                'error': '영상을 찾을 수 없습니다.'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"❌ 영상 이름 변경 오류: {e}")
+            return Response({
+                'error': f'영상 이름 변경 중 오류 발생: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 class VideoAnalysisView(APIView):
     """영상 분석 상태 확인 및 시작 - backend_videochat 방식"""
     permission_classes = [AllowAny]
@@ -2999,7 +3096,7 @@ class VideoSummaryView(APIView):
             }
     
     def _collect_video_statistics(self, video, analysis_data):
-        """영상 통계 수집"""
+        """영상 통계 수집 - 💡핵심 인사이트 포함"""
         try:
             video_summary = analysis_data.get('video_summary', {})
             frame_results = analysis_data.get('frame_results', [])
@@ -3030,11 +3127,70 @@ class VideoSummaryView(APIView):
                 'lighting_types': scene_distribution.get('lighting_distribution', {})
             })
             
+            # 💡 핵심 인사이트 생성
+            stats['key_insights'] = self._generate_key_insights_for_summary(stats, frame_results)
+            
             return stats
             
         except Exception as e:
             logger.error(f"❌ 통계 수집 오류: {e}")
             return {}
+    
+    def _generate_key_insights_for_summary(self, stats, frame_results):
+        """💡 핵심 인사이트 생성 (영상 요약용)"""
+        insights = []
+        
+        try:
+            # 1. 인원 구성 인사이트
+            person_count = stats.get('unique_persons', 0)
+            peak_count = stats.get('peak_person_count', 0)
+            
+            if person_count > 0:
+                if peak_count > 5:
+                    insights.append(f"다수 인원 등장 (최대 {peak_count}명 동시 등장)")
+                elif peak_count > 2:
+                    insights.append(f"소규모 그룹 활동 ({peak_count}명)")
+                else:
+                    insights.append(f"소수 인원 영상 ({person_count}명)")
+            
+            # 2. 영상 길이 인사이트
+            duration = stats.get('total_duration', 0)
+            if duration > 300:  # 5분 이상
+                insights.append(f"긴 영상 ({duration/60:.1f}분)")
+            elif duration > 60:
+                insights.append(f"중간 길이 영상 ({duration/60:.1f}분)")
+            else:
+                insights.append(f"짧은 영상 ({duration:.0f}초)")
+            
+            # 3. 품질 인사이트
+            quality_score = stats.get('quality_score', 0)
+            if quality_score > 0.8:
+                insights.append(f"높은 품질 (점수: {quality_score:.2f})")
+            elif quality_score > 0.6:
+                insights.append(f"양호한 품질 (점수: {quality_score:.2f})")
+            elif quality_score > 0:
+                insights.append(f"보통 품질 (점수: {quality_score:.2f})")
+            
+            # 4. 장면 다양성 인사이트
+            scene_types = stats.get('scene_types', {})
+            if len(scene_types) > 3:
+                insights.append(f"다양한 장면 포함 ({len(scene_types)}가지 장소)")
+            elif len(scene_types) > 0:
+                main_scenes = list(scene_types.keys())[:2]
+                insights.append(f"주요 장소: {', '.join(main_scenes)}")
+            
+            # 5. 활동 수준 인사이트
+            activity_levels = stats.get('activity_levels', {})
+            if 'high' in activity_levels:
+                insights.append(f"활발한 활동 감지")
+            elif 'medium' in activity_levels:
+                insights.append(f"중간 수준 활동")
+            
+            return insights[:5]  # 최대 5개 인사이트
+            
+        except Exception as e:
+            logger.error(f"❌ 핵심 인사이트 생성 오류: {e}")
+            return ["영상 분석 완료"]
     
     def _extract_key_events(self, analysis_data):
         """키 이벤트 추출"""
@@ -3064,125 +3220,130 @@ class VideoSummaryView(APIView):
             return []
     
     def _generate_brief_summary(self, statistics, key_events):
-        """간단한 요약 생성"""
+        """간단 요약 (1-2문장, 💡핵심만 강조)"""
         try:
-            summary_parts = []
+            duration = statistics.get('total_duration', 0)
+            duration_min = duration / 60
+            person_count = statistics.get('unique_persons', 0)
+            key_insights = statistics.get('key_insights', [])
             
-            # 기본 정보
-            summary_parts.append(f"📹 영상 길이: {statistics.get('total_duration', 0):.1f}초")
-            summary_parts.append(f"👥 총 감지된 사람: {statistics.get('total_detections', 0)}명")
-            summary_parts.append(f"🎯 품질 점수: {statistics.get('quality_score', 0):.2f}/1.0")
+            # 가장 중요한 핵심 1개 + 기본 정보
+            main_insight = key_insights[0] if key_insights else "영상 분석 완료"
             
-            # 주요 이벤트
-            if key_events:
-                summary_parts.append(f"⭐ 주요 장면: {len(key_events)}개 발견")
-                peak_event = max(key_events, key=lambda x: x['person_count']) if key_events else None
-                if peak_event:
-                    summary_parts.append(f"   - 최대 {peak_event['person_count']}명이 동시에 등장")
-            
-            return "\n".join(summary_parts)
+            return f"💡 {main_insight}. 영상 길이 {duration_min:.1f}분, 총 {person_count}명 등장."
             
         except Exception as e:
             logger.error(f"❌ 간단 요약 생성 오류: {e}")
             return "요약 생성 중 오류가 발생했습니다."
     
     def _generate_detailed_summary(self, statistics, key_events, analysis_data):
-        """상세한 요약 생성"""
+        """상세 요약 (문단 형식, 💡핵심 3개 + 주요 이벤트)"""
         try:
-            summary_parts = []
+            duration = statistics.get('total_duration', 0)
+            duration_min = duration / 60
+            person_count = statistics.get('unique_persons', 0)
+            peak_count = statistics.get('peak_person_count', 0)
+            key_insights = statistics.get('key_insights', [])
             
-            # 기본 정보
-            summary_parts.append("📊 **영상 분석 결과**")
-            summary_parts.append(f"• 영상 길이: {statistics.get('total_duration', 0):.1f}초")
-            summary_parts.append(f"• 분석된 프레임: {statistics.get('total_frames', 0)}개")
-            summary_parts.append(f"• 총 감지된 사람: {statistics.get('total_detections', 0)}명")
-            summary_parts.append(f"• 고유 인물: {statistics.get('unique_persons', 0)}명")
+            parts = [
+                f"📹 이 영상은 {duration_min:.1f}분 길이로, 총 {person_count}명이 등장합니다.",
+                "\n💡 핵심 포인트:",
+                *[f"  • {insight}" for insight in key_insights[:3]]
+            ]
             
-            # 품질 평가
+            # 주요 이벤트 3개
+            if key_events:
+                parts.append("\n⏱️ 주요 장면:")
+                for i, event in enumerate(key_events[:3], 1):
+                    timestamp = event.get('timestamp', 0)
+                    time_str = f"{int(timestamp//60)}:{int(timestamp%60):02d}"
+                    desc = event.get('description', '장면')[:50]
+                    parts.append(f"  {i}. [{time_str}] {desc}")
+            
+            # 품질 정보
             quality_score = statistics.get('quality_score', 0)
-            quality_status = "우수" if quality_score > 0.8 else "양호" if quality_score > 0.6 else "보통"
-            summary_parts.append(f"• 영상 품질: {quality_status} ({quality_score:.2f}/1.0)")
+            if quality_score > 0:
+                quality_status = "우수" if quality_score > 0.8 else "양호" if quality_score > 0.6 else "보통"
+                parts.append(f"\n🎯 영상 품질: {quality_status} ({quality_score:.2f}/1.0)")
             
-            # 시간대별 분석
-            summary_parts.append(f"\n⏰ **시간대별 분석**")
-            summary_parts.append(f"• 최대 활동 시간: {statistics.get('peak_time', 0):.1f}초")
-            summary_parts.append(f"• 최대 동시 인원: {statistics.get('peak_person_count', 0)}명")
-            summary_parts.append(f"• 평균 동시 인원: {statistics.get('average_person_count', 0):.1f}명")
-            
-            # 장면 특성
+            # 장면 유형
             scene_types = statistics.get('scene_types', {})
             if scene_types:
-                summary_parts.append(f"\n🎬 **장면 특성**")
-                for scene_type, count in scene_types.items():
-                    summary_parts.append(f"• {scene_type}: {count}개 장면")
+                scene_list = [f"{k}({v})" for k, v in list(scene_types.items())[:3]]
+                parts.append(f"\n🎬 장면 유형: {', '.join(scene_list)}")
             
-            # 주요 이벤트
-            if key_events:
-                summary_parts.append(f"\n⭐ **주요 이벤트**")
-                for i, event in enumerate(key_events[:5], 1):
-                    summary_parts.append(f"{i}. {event['timestamp']:.1f}초 - {event['description']}")
-            
-            return "\n".join(summary_parts)
+            return "\n".join(parts)
             
         except Exception as e:
             logger.error(f"❌ 상세 요약 생성 오류: {e}")
             return "상세 요약 생성 중 오류가 발생했습니다."
     
     def _generate_comprehensive_summary(self, statistics, key_events, analysis_data):
-        """종합적인 요약 생성"""
+        """종합 요약 (전체 분석, 💡핵심 5개 + 모든 이벤트 + 통계)"""
         try:
-            summary_parts = []
+            duration = statistics.get('total_duration', 0)
+            duration_min = duration / 60
+            person_count = statistics.get('unique_persons', 0)
+            peak_count = statistics.get('peak_person_count', 0)
+            key_insights = statistics.get('key_insights', [])
             
-            # 제목
-            summary_parts.append("🎬 **영상 종합 분석 보고서**")
-            summary_parts.append("=" * 50)
+            parts = [
+                f"📹 영상 정보",
+                f"  • 길이: {duration_min:.1f}분",
+                f"  • 등장 인원: {person_count}명",
+                f"  • 분석 프레임: {statistics.get('total_frames', 0)}개",
+                f"  • 총 감지 객체: {statistics.get('total_detections', 0)}개",
+                "\n💡 핵심 인사이트 (전체)"
+            ]
             
-            # 기본 정보
-            summary_parts.append(f"\n📋 **기본 정보**")
-            summary_parts.append(f"• 영상 길이: {statistics.get('total_duration', 0):.1f}초")
-            summary_parts.append(f"• 분석 프레임: {statistics.get('total_frames', 0)}개")
-            summary_parts.append(f"• 총 감지 객체: {statistics.get('total_detections', 0)}개")
-            summary_parts.append(f"• 고유 인물: {statistics.get('unique_persons', 0)}명")
+            # 전체 핵심 인사이트 (최대 5개)
+            parts.extend([f"  • {insight}" for insight in key_insights[:5]])
             
-            # 품질 평가
-            quality_score = statistics.get('quality_score', 0)
-            quality_status = "우수" if quality_score > 0.8 else "양호" if quality_score > 0.6 else "보통"
-            summary_parts.append(f"• 영상 품질: {quality_status} ({quality_score:.2f}/1.0)")
-            
-            # 시간대별 분석
-            summary_parts.append(f"\n⏰ **시간대별 활동 분석**")
-            summary_parts.append(f"• 최대 활동 시간: {statistics.get('peak_time', 0):.1f}초")
-            summary_parts.append(f"• 최대 동시 인원: {statistics.get('peak_person_count', 0)}명")
-            summary_parts.append(f"• 평균 동시 인원: {statistics.get('average_person_count', 0):.1f}명")
-            
-            # 장면 다양성
-            scene_types = statistics.get('scene_types', {})
-            activity_levels = statistics.get('activity_levels', {})
-            lighting_types = statistics.get('lighting_types', {})
-            
-            summary_parts.append(f"\n🎭 **장면 다양성 분석**")
-            summary_parts.append(f"• 장면 유형: {', '.join(scene_types.keys()) if scene_types else 'N/A'}")
-            summary_parts.append(f"• 활동 수준: {', '.join(activity_levels.keys()) if activity_levels else 'N/A'}")
-            summary_parts.append(f"• 조명 상태: {', '.join(lighting_types.keys()) if lighting_types else 'N/A'}")
-            summary_parts.append(f"• 다양성 점수: {statistics.get('scene_diversity', 0):.2f}/1.0")
-            
-            # 주요 이벤트 타임라인
+            # 주요 이벤트 전체 (최대 8개)
             if key_events:
-                summary_parts.append(f"\n⭐ **주요 이벤트 타임라인**")
-                for i, event in enumerate(key_events, 1):
-                    summary_parts.append(f"{i:2d}. {event['timestamp']:6.1f}초 - {event['description']}")
-                    summary_parts.append(f"     장면: {event.get('scene_type', 'unknown')}, 활동: {event.get('activity_level', 'medium')}")
+                parts.append("\n⏱️ 주요 이벤트 타임라인:")
+                for i, event in enumerate(key_events[:8], 1):
+                    timestamp = event.get('timestamp', 0)
+                    time_str = f"{int(timestamp//60)}:{int(timestamp%60):02d}"
+                    desc = event.get('description', '장면')[:60]
+                    person_cnt = event.get('person_count', 0)
+                    activity = event.get('activity_level', 'medium')
+                    emoji = "🔴" if activity == 'high' else "🟡" if activity == 'medium' else "🟢"
+                    parts.append(f"  {emoji} {i}. [{time_str}] {desc} ({person_cnt}명)")
             
-            # 인사이트
-            summary_parts.append(f"\n💡 **주요 인사이트**")
-            if statistics.get('peak_person_count', 0) > 3:
-                summary_parts.append("• 다수의 인물이 등장하는 활발한 영상입니다")
-            if statistics.get('quality_score', 0) > 0.8:
-                summary_parts.append("• 높은 품질의 영상으로 상세한 분석이 가능합니다")
-            if statistics.get('scene_diversity', 0) > 0.5:
-                summary_parts.append("• 다양한 장면이 포함된 풍부한 콘텐츠입니다")
+            # 상세 통계
+            parts.append("\n📊 상세 통계:")
+            parts.append(f"  • 최대 동시 인원: {peak_count}명")
+            parts.append(f"  • 평균 동시 인원: {statistics.get('average_person_count', 0):.1f}명")
             
-            return "\n".join(summary_parts)
+            # 품질 정보
+            quality_score = statistics.get('quality_score', 0)
+            if quality_score > 0:
+                quality_status = "우수" if quality_score > 0.8 else "양호" if quality_score > 0.6 else "보통"
+                parts.append(f"  • 영상 품질: {quality_status} ({quality_score:.2f}/1.0)")
+            
+            # 장면 분석
+            scene_types = statistics.get('scene_types', {})
+            if scene_types:
+                scene_list = ', '.join([f"{k}({v})" for k, v in list(scene_types.items())[:5]])
+                parts.append(f"  • 장면 유형: {scene_list}")
+            
+            activity_levels = statistics.get('activity_levels', {})
+            if activity_levels:
+                activity_list = ', '.join([f"{k}({v})" for k, v in activity_levels.items()])
+                parts.append(f"  • 활동 수준: {activity_list}")
+            
+            lighting_types = statistics.get('lighting_types', {})
+            if lighting_types:
+                lighting_list = ', '.join([f"{k}({v})" for k, v in lighting_types.items()])
+                parts.append(f"  • 조명 상태: {lighting_list}")
+            
+            # 다양성 점수
+            diversity = statistics.get('scene_diversity', 0)
+            if diversity > 0:
+                parts.append(f"  • 장면 다양성: {diversity:.2f}/1.0")
+            
+            return "\n".join(parts)
             
         except Exception as e:
             logger.error(f"❌ 종합 요약 생성 오류: {e}")

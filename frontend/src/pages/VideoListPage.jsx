@@ -103,10 +103,40 @@ const handleDelete = async (video) => {
   };
   const loadVideoList = async () => {
     try {
+      console.log('비디오 목록 로드 시작...');
       const response = await api.get('/api/video/list/');
+      console.log('비디오 목록 응답:', response.data);
       setVideoList(response.data.videos || []);
     } catch (error) {
       console.error('비디오 목록 로드 실패:', error);
+      
+      // 더 자세한 에러 정보 표시
+      let errorMessage = '비디오 목록을 불러오는데 실패했습니다.';
+      
+      if (error.code === 'ECONNABORTED') {
+        errorMessage = '요청 시간이 초과되었습니다. 서버가 응답하지 않습니다.';
+      } else if (error.response) {
+        // 서버가 응답했지만 에러 상태 코드
+        errorMessage = `서버 오류 (${error.response.status}): ${error.response.data?.message || error.response.statusText}`;
+      } else if (error.request) {
+        // 요청이 전송되었지만 응답을 받지 못함
+        errorMessage = '서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해주세요.';
+      } else {
+        // 요청 설정 중 오류
+        errorMessage = `요청 오류: ${error.message}`;
+      }
+      
+      // 에러 토스트 표시
+      const errorToast = document.createElement('div');
+      errorToast.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center max-w-md';
+      errorToast.innerHTML = `
+        <svg class="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+        <span>${errorMessage}</span>
+      `;
+      document.body.appendChild(errorToast);
+      setTimeout(() => errorToast.remove(), 8000);
     }
   };
   // 분석 시작하기

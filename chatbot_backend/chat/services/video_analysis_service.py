@@ -19,25 +19,86 @@ except ImportError:
     YOLO_AVAILABLE = False
     print("⚠️ YOLO 미설치 - 객체 감지 기능 제한")
 
+# DeepFace import (성별/나이/감정 분석)
+try:
+    from deepface import DeepFace
+    DEEPFACE_AVAILABLE = True
+    print("✅ DeepFace 로드 성공")
+except ImportError:
+    DEEPFACE_AVAILABLE = False
+    print("⚠️ DeepFace 미설치 - 얼굴 분석 기능 제한")
+
+# Transformers import (BLIP-2 캡션 생성)
+try:
+    from transformers import BlipProcessor, BlipForConditionalGeneration
+    from PIL import Image
+    BLIP_AVAILABLE = True
+    print("✅ BLIP 로드 성공")
+except ImportError:
+    BLIP_AVAILABLE = False
+    print("⚠️ BLIP 미설치 - 캡션 생성 기능 제한")
+
+# OpenAI GPT-4V (조건부 사용)
+try:
+    import openai
+    GPT4V_AVAILABLE = bool(os.getenv('OPENAI_API_KEY'))
+    if GPT4V_AVAILABLE:
+        print("✅ GPT-4V 사용 가능")
+    else:
+        print("ℹ️ GPT-4V API 키 없음 - DeepFace만 사용")
+except ImportError:
+    GPT4V_AVAILABLE = False
+    print("⚠️ OpenAI 미설치")
+
 logger = logging.getLogger(__name__)
 
 class VideoAnalysisService:
-    """영상 분석 서비스"""
+    """하이브리드 영상 분석 서비스 (YOLO + DeepFace + GPT-4V + BLIP)"""
     
     def __init__(self):
-        self.analysis_modules_available = True  # 기본적으로 사용 가능
+        self.analysis_modules_available = True
         
         # YOLO 모델 초기화
         self.yolo_model = None
         if YOLO_AVAILABLE:
             try:
-                self.yolo_model = YOLO('yolov8n.pt')  # YOLOv8 nano 모델 사용
+                self.yolo_model = YOLO('yolov8n.pt')
                 logger.info("✅ YOLO 모델 초기화 완료")
             except Exception as e:
                 logger.warning(f"⚠️ YOLO 모델 초기화 실패: {e}")
                 self.yolo_model = None
         
-        logger.info("✅ 영상 분석 서비스 초기화 완료")
+        # BLIP 모델 초기화 (캡션 생성)
+        self.blip_processor = None
+        self.blip_model = None
+        if BLIP_AVAILABLE:
+            try:
+                self.blip_processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+                self.blip_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+                logger.info("✅ BLIP 모델 초기화 완료")
+            except Exception as e:
+                logger.warning(f"⚠️ BLIP 모델 초기화 실패: {e}")
+        
+        # GPT-4V 사용 여부
+        self.use_gpt4v = GPT4V_AVAILABLE
+        
+        # DeepFace 사용 여부
+        self.use_deepface = DEEPFACE_AVAILABLE
+        
+        # 통계 변수
+        self.stats = {
+            'deepface_success': 0,
+            'deepface_fail': 0,
+            'gpt4v_calls': 0,
+            'blip_calls': 0,
+            'total_cost': 0.0
+        }
+        
+        logger.info("✅ 하이브리드 영상 분석 서비스 초기화 완료")
+        logger.info(f"   - YOLO: {YOLO_AVAILABLE}")
+        logger.info(f"   - DeepFace: {DEEPFACE_AVAILABLE}")
+        logger.info(f"   - BLIP: {BLIP_AVAILABLE}")
+        logger.info(f"   - GPT-4V: {GPT4V_AVAILABLE}")
     
     def sync_video_status_with_files(self, video_id):
         """데이터베이스 상태와 실제 파일 상태를 동기화"""
@@ -124,7 +185,7 @@ class VideoAnalysisService:
             return False
     
     def _detect_persons_with_yolo(self, frame):
-        """YOLO를 사용한 실제 사람 감지"""
+        """🔥 하이브리드 사람 감지 (YOLO + DeepFace + 색상 분석)"""
         if not self.yolo_model:
             return []
         
@@ -147,49 +208,29 @@ class VideoAnalysisService:
                         
                         # person 클래스만 처리
                         if class_name == 'person':
+                            # 바운딩 박스 (픽셀 단위)
+                            x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
+                            
                             # 바운딩 박스 정규화
                             normalized_bbox = [
-                                float(box[0]/w), float(box[1]/h),
-                                float(box[2]/w), float(box[3]/h)
+                                float(x1/w), float(y1/h),
+                                float(x2/w), float(y2/h)
                             ]
+                            
+                            # 사람 영역 추출
+                            person_region = frame[y1:y2, x1:x2]
+                            
+                            # 🔥 하이브리드 분석: DeepFace + 색상 추출
+                            person_analysis = self._hybrid_person_analysis(person_region, frame, (x1, y1, x2, y2))
                             
                             detected_persons.append({
                                 'class': 'person',
                                 'bbox': normalized_bbox,
                                 'confidence': float(conf),
                                 'confidence_level': float(conf),
-                                'attributes': {
-                                    'gender': {
-                                        'value': 'person',
-                                        'confidence': float(conf),
-                                        'all_scores': {
-                                            'a person': float(conf),
-                                            'a man': float(conf) * 0.5,
-                                            'a woman': float(conf) * 0.5
-                                        },
-                                        'top_3': [
-                                            ['a person', float(conf)],
-                                            ['a man', float(conf) * 0.5],
-                                            ['a woman', float(conf) * 0.5]
-                                        ]
-                                    },
-                                    'age': {
-                                        'value': 'adult',
-                                        'confidence': float(conf) * 0.8,
-                                        'all_scores': {
-                                            'a child': float(conf) * 0.1,
-                                            'a teenager': float(conf) * 0.2,
-                                            'a young adult': float(conf) * 0.3,
-                                            'a middle-aged person': float(conf) * 0.6,
-                                            'an elderly person': float(conf) * 0.1
-                                        },
-                                        'top_3': [
-                                            ['a middle-aged person', float(conf) * 0.6],
-                                            ['a young adult', float(conf) * 0.3],
-                                            ['a teenager', float(conf) * 0.2]
-                                        ]
-                                    }
-                                }
+                                'attributes': person_analysis['attributes'],
+                                'clothing_colors': person_analysis['clothing_colors'],
+                                'analysis_source': person_analysis['source']
                             })
             
             return detected_persons
@@ -197,6 +238,286 @@ class VideoAnalysisService:
         except Exception as e:
             logger.warning(f"YOLO 감지 실패: {e}")
             return []
+    
+    def _hybrid_person_analysis(self, person_region, full_frame, bbox):
+        """🔥 하이브리드 사람 분석 (DeepFace → GPT-4V 폴백)"""
+        x1, y1, x2, y2 = bbox
+        person_h, person_w = person_region.shape[:2]
+        
+        # 기본값
+        default_result = {
+            'source': 'fallback',
+            'attributes': self._get_default_attributes(),
+            'clothing_colors': {'upper': 'unknown', 'lower': 'unknown'}
+        }
+        
+        # 영역이 너무 작으면 분석 스킵
+        if person_h < 50 or person_w < 30:
+            logger.warning("사람 영역이 너무 작음 - 기본값 사용")
+            return default_result
+        
+        # 1단계: DeepFace 분석 (무료, 빠름)
+        if self.use_deepface:
+            deepface_result = self._analyze_with_deepface(person_region)
+            if deepface_result and deepface_result['confidence'] > 0.7:
+                # DeepFace 신뢰도 높음 → 사용
+                self.stats['deepface_success'] += 1
+                
+                # 의상 색상 추출 (OpenCV)
+                clothing_colors = self._extract_clothing_colors(person_region)
+                
+                return {
+                    'source': 'DeepFace',
+                    'attributes': deepface_result['attributes'],
+                    'clothing_colors': clothing_colors
+                }
+            else:
+                self.stats['deepface_fail'] += 1
+        
+        # 2단계: GPT-4V 분석 (신뢰도 낮거나 DeepFace 실패 시)
+        if self.use_gpt4v and self.stats['gpt4v_calls'] < 10:  # 최대 10회 제한
+            gpt4v_result = self._analyze_with_gpt4v(person_region)
+            if gpt4v_result:
+                self.stats['gpt4v_calls'] += 1
+                self.stats['total_cost'] += 0.015
+                
+                return {
+                    'source': 'GPT-4V',
+                    'attributes': gpt4v_result['attributes'],
+                    'clothing_colors': gpt4v_result['clothing_colors']
+                }
+        
+        # 3단계: 폴백 (색상만이라도 추출)
+        clothing_colors = self._extract_clothing_colors(person_region)
+        default_result['clothing_colors'] = clothing_colors
+        return default_result
+    
+    def _analyze_with_deepface(self, person_region):
+        """DeepFace로 성별/나이/감정 분석"""
+        try:
+            # BGR → RGB 변환
+            person_rgb = cv2.cvtColor(person_region, cv2.COLOR_BGR2RGB)
+            
+            # DeepFace 분석
+            analysis = DeepFace.analyze(
+                person_rgb,
+                actions=['age', 'gender', 'emotion'],
+                enforce_detection=False,
+                detector_backend='opencv'
+            )
+            
+            # 결과가 리스트인 경우 첫 번째 항목 사용
+            if isinstance(analysis, list):
+                analysis = analysis[0]
+            
+            # 성별 정보
+            gender = analysis.get('dominant_gender', 'Unknown')  # Man/Woman
+            gender_conf = analysis.get('gender', {}).get(gender, 0) / 100.0 if isinstance(analysis.get('gender'), dict) else 0.7
+            
+            # 나이 정보
+            age = analysis.get('age', 30)
+            age_group = self._age_to_group(age)
+            
+            # 감정 정보
+            emotion = analysis.get('dominant_emotion', 'neutral')
+            
+            return {
+                'confidence': gender_conf,
+                'attributes': {
+                    'gender': {
+                        'value': gender.lower(),  # man/woman
+                        'confidence': gender_conf,
+                        'all_scores': analysis.get('gender', {}),
+                        'top_3': [[k, v/100.0] for k, v in sorted(analysis.get('gender', {}).items(), key=lambda x: x[1], reverse=True)[:3]]
+                    },
+                    'age': {
+                        'value': age_group,
+                        'confidence': 0.8,
+                        'estimated_age': int(age),
+                        'all_scores': {},
+                        'top_3': [[age_group, 0.8]]
+                    },
+                    'emotion': {
+                        'value': emotion,
+                        'confidence': 0.7,
+                        'all_scores': analysis.get('emotion', {})
+                    }
+                }
+            }
+            
+        except Exception as e:
+            logger.debug(f"DeepFace 분석 실패: {e}")
+            return None
+    
+    def _analyze_with_gpt4v(self, person_region):
+        """GPT-4 Vision으로 상세 분석 (조건부 사용)"""
+        try:
+            import base64
+            from io import BytesIO
+            from PIL import Image
+            
+            # BGR → RGB
+            person_rgb = cv2.cvtColor(person_region, cv2.COLOR_BGR2RGB)
+            pil_image = Image.fromarray(person_rgb)
+            
+            # 이미지를 base64로 인코딩
+            buffered = BytesIO()
+            pil_image.save(buffered, format="JPEG")
+            img_str = base64.b64encode(buffered.getvalue()).decode()
+            
+            client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+            
+            prompt = """이미지 속 사람을 분석해주세요.
+
+응답 형식 (JSON):
+{
+  "gender": "man" 또는 "woman",
+  "age_group": "child/teenager/young_adult/middle_aged/elderly",
+  "upper_clothing_color": "색상 (한국어)",
+  "lower_clothing_color": "색상 (한국어)",
+  "clothing_style": "casual/formal/sport"
+}
+
+JSON만 답변해주세요."""
+            
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",  # 저렴한 버전 사용
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_str}"}}
+                    ]
+                }],
+                max_tokens=150,
+                temperature=0.3
+            )
+            
+            # JSON 파싱
+            import json
+            result_json = json.loads(response.choices[0].message.content)
+            
+            return {
+                'attributes': {
+                    'gender': {
+                        'value': result_json.get('gender', 'unknown'),
+                        'confidence': 0.95,
+                        'all_scores': {},
+                        'top_3': [[result_json.get('gender', 'unknown'), 0.95]]
+                    },
+                    'age': {
+                        'value': result_json.get('age_group', 'adult'),
+                        'confidence': 0.9,
+                        'all_scores': {},
+                        'top_3': [[result_json.get('age_group', 'adult'), 0.9]]
+                    },
+                    'clothing': {
+                        'value': result_json.get('clothing_style', 'casual'),
+                        'confidence': 0.85
+                    }
+                },
+                'clothing_colors': {
+                    'upper': result_json.get('upper_clothing_color', 'unknown'),
+                    'lower': result_json.get('lower_clothing_color', 'unknown')
+                }
+            }
+            
+        except Exception as e:
+            logger.warning(f"GPT-4V 분석 실패: {e}")
+            return None
+    
+    def _extract_clothing_colors(self, person_region):
+        """의상 색상 추출 (상의/하의 분리)"""
+        try:
+            h, w = person_region.shape[:2]
+            
+            # 상의 영역 (상위 30-50%)
+            upper_region = person_region[int(h*0.3):int(h*0.5), :]
+            upper_color = self._get_dominant_color_name(upper_region)
+            
+            # 하의 영역 (하위 50-80%)
+            lower_region = person_region[int(h*0.5):int(h*0.8), :]
+            lower_color = self._get_dominant_color_name(lower_region)
+            
+            return {
+                'upper': upper_color,
+                'lower': lower_color
+            }
+            
+        except Exception as e:
+            logger.warning(f"색상 추출 실패: {e}")
+            return {'upper': 'unknown', 'lower': 'unknown'}
+    
+    def _get_dominant_color_name(self, image_region):
+        """이미지 영역의 주요 색상 이름 반환"""
+        try:
+            if image_region.size == 0:
+                return 'unknown'
+            
+            # HSV로 변환
+            hsv = cv2.cvtColor(image_region, cv2.COLOR_BGR2HSV)
+            h_mean = np.mean(hsv[:, :, 0])
+            s_mean = np.mean(hsv[:, :, 1])
+            v_mean = np.mean(hsv[:, :, 2])
+            
+            # 채도가 낮으면 무채색
+            if s_mean < 30:
+                if v_mean > 200:
+                    return 'white'
+                elif v_mean < 50:
+                    return 'black'
+                else:
+                    return 'gray'
+            
+            # 색상 분류 (개선된 범위)
+            if h_mean < 10 or h_mean > 170:
+                return 'red'
+            elif h_mean < 22:
+                return 'orange'
+            elif h_mean < 38:
+                return 'yellow'
+            elif h_mean < 85:
+                return 'green'
+            elif h_mean < 130:
+                return 'blue'
+            elif h_mean < 155:
+                return 'purple'
+            else:
+                return 'pink'
+                
+        except Exception as e:
+            logger.warning(f"색상 이름 변환 실패: {e}")
+            return 'unknown'
+    
+    def _age_to_group(self, age):
+        """나이를 그룹으로 변환"""
+        if age < 13:
+            return 'child'
+        elif age < 20:
+            return 'teenager'
+        elif age < 35:
+            return 'young_adult'
+        elif age < 60:
+            return 'middle_aged'
+        else:
+            return 'elderly'
+    
+    def _get_default_attributes(self):
+        """기본 속성값"""
+        return {
+            'gender': {
+                'value': 'person',
+                'confidence': 0.5,
+                'all_scores': {'a person': 0.5},
+                'top_3': [['a person', 0.5]]
+            },
+            'age': {
+                'value': 'adult',
+                'confidence': 0.5,
+                'all_scores': {'adult': 0.5},
+                'top_3': [['adult', 0.5]]
+            }
+        }
     
     def _get_dominant_color(self, image_region):
         """영역의 주요 색상 추출 (HSV 기반)"""
@@ -233,7 +554,7 @@ class VideoAnalysisService:
             # 주요 색상 추출
             dominant_colors = []
             
-            # 색상별 마스크 생성 및 분석
+            # 색상별 마스크 생성 및 분석 (개선된 분홍색 감지)
             color_ranges = {
                 'red': [(0, 50, 50), (10, 255, 255)],  # 빨간색 범위
                 'orange': [(10, 50, 50), (25, 255, 255)],  # 주황색 범위
@@ -241,7 +562,7 @@ class VideoAnalysisService:
                 'green': [(40, 50, 50), (80, 255, 255)],  # 초록색 범위
                 'blue': [(80, 50, 50), (130, 255, 255)],  # 파란색 범위
                 'purple': [(130, 50, 50), (160, 255, 255)],  # 보라색 범위
-                'pink': [(160, 30, 30), (180, 255, 255), (0, 30, 30), (10, 255, 255)]  # 분홍색 범위 (더 넓은 범위)
+                'pink': [(160, 20, 100), (180, 255, 255), (0, 20, 100), (15, 255, 255)]  # 분홍색 범위 (더 넓고 정확한 범위)
             }
             
             for color_name, color_range in color_ranges.items():
@@ -258,16 +579,32 @@ class VideoAnalysisService:
                 # 해당 색상의 픽셀 비율 계산
                 color_ratio = np.sum(mask > 0) / (frame_rgb.shape[0] * frame_rgb.shape[1])
                 
-                # 분홍색은 더 낮은 임계값 사용 (1% 이상)
-                threshold = 0.01 if color_name == 'pink' else 0.02
+                # 분홍색은 더 낮은 임계값 사용 (0.5% 이상)
+                threshold = 0.005 if color_name == 'pink' else 0.02
                 
                 if color_ratio > threshold:
+                    # RGB 기반 추가 검증 (분홍색의 경우)
+                    if color_name == 'pink':
+                        # 분홍색 RGB 특성: R > B, G 중간값
+                        pink_pixels = frame_rgb[mask > 0]
+                        if len(pink_pixels) > 0:
+                            mean_rgb = np.mean(pink_pixels, axis=0)
+                            # 분홍색 특성: R > G > B (대략적으로)
+                            if mean_rgb[0] > mean_rgb[2] and mean_rgb[1] > mean_rgb[2] * 0.5:
+                                confidence = min(color_ratio * 3, 1.0)  # 분홍색은 높은 신뢰도
+                            else:
+                                confidence = min(color_ratio * 1.5, 0.7)  # 의심스러운 경우 낮은 신뢰도
+                        else:
+                            confidence = min(color_ratio * 2, 1.0)
+                    else:
+                        confidence = min(color_ratio * 2, 1.0)  # 비율에 따른 신뢰도
+                    
                     dominant_colors.append({
                         'color': color_name,
                         'ratio': float(color_ratio),
-                        'confidence': min(color_ratio * 2, 1.0)  # 비율에 따른 신뢰도
+                        'confidence': confidence
                     })
-                    print(f"🎨 {color_name} 감지: {color_ratio:.3f} ({color_ratio*100:.1f}%)")
+                    print(f"🎨 {color_name} 감지: {color_ratio:.3f} ({color_ratio*100:.1f}%) 신뢰도: {confidence:.2f}")
             
             # 비율 순으로 정렬
             dominant_colors.sort(key=lambda x: x['ratio'], reverse=True)
@@ -347,6 +684,17 @@ class VideoAnalysisService:
                 if video.analysis_status != 'completed':
                     logger.error(f"❌ 상태 저장 검증 실패: {video.analysis_status}")
                     raise Exception("분석 상태 저장 검증 실패")
+                
+                # 🔥 하이브리드 분석 통계 출력
+                logger.info("="*60)
+                logger.info("📊 하이브리드 분석 통계")
+                logger.info(f"  • DeepFace 성공: {self.stats['deepface_success']}회")
+                logger.info(f"  • DeepFace 실패: {self.stats['deepface_fail']}회")
+                logger.info(f"  • GPT-4V 호출: {self.stats['gpt4v_calls']}회")
+                logger.info(f"  • BLIP 캡션: {self.stats['blip_calls']}회")
+                logger.info(f"  • 총 비용: ${self.stats['total_cost']:.3f}")
+                logger.info(f"  • DeepFace 성공률: {self.stats['deepface_success']/(self.stats['deepface_success']+self.stats['deepface_fail'])*100:.1f}%" if (self.stats['deepface_success']+self.stats['deepface_fail']) > 0 else "  • DeepFace 성공률: N/A")
+                logger.info("="*60)
                     
             except Exception as save_error:
                 logger.error(f"❌ Video 모델 저장 실패: {save_error}")
@@ -537,21 +885,43 @@ class VideoAnalysisService:
             
             # 진행률 업데이트 (10%)
             self._update_progress(video_id, 10, "영상 정보 추출 완료")
-            time.sleep(0.5)  # 진행률 확인을 위한 지연
+            time.sleep(0.5)
             
-            # 샘플 프레임 분석 (더 많은 프레임 분석)
+            # ✨ 하이브리드 프레임 샘플링 개선 (1초당 1프레임)
             sample_frames = []
             frame_indices = []
             
-            # 프레임 샘플링 (처음, 1/4, 1/2, 3/4, 마지막)
-            if frame_count > 4:
-                frame_indices = [0, frame_count//4, frame_count//2, 3*frame_count//4, frame_count-1]
-            elif frame_count > 2:
-                frame_indices = [0, frame_count//2, frame_count-1]
-            elif frame_count > 0:
-                frame_indices = [0]
+            # 영상 길이에 따라 적응적 샘플링
+            if duration <= 10:
+                # 10초 이하: 0.5초당 1프레임
+                sample_interval = max(1, int(fps * 0.5))
+            elif duration <= 30:
+                # 30초 이하: 1초당 1프레임
+                sample_interval = max(1, int(fps))
+            elif duration <= 120:
+                # 2분 이하: 2초당 1프레임
+                sample_interval = max(1, int(fps * 2))
             else:
-                raise Exception("영상에 프레임이 없습니다")
+                # 2분 초과: 3초당 1프레임
+                sample_interval = max(1, int(fps * 3))
+            
+            # 프레임 인덱스 생성
+            frame_indices = list(range(0, frame_count, sample_interval))
+            
+            # 마지막 프레임 포함
+            if frame_indices[-1] != frame_count - 1:
+                frame_indices.append(frame_count - 1)
+            
+            # 최대 50개로 제한 (너무 많으면 처리 시간 증가)
+            if len(frame_indices) > 50:
+                step = len(frame_indices) // 50
+                frame_indices = frame_indices[::step][:50]
+            
+            # 최소 5개 보장
+            if len(frame_indices) < 5:
+                frame_indices = [0, frame_count//4, frame_count//2, 3*frame_count//4, frame_count-1]
+            
+            logger.info(f"📸 샘플링 전략: {len(frame_indices)}개 프레임 (간격: {sample_interval}, FPS: {fps:.1f})")
             
             # 프레임 인덱스 유효성 검사
             frame_indices = [idx for idx in frame_indices if 0 <= idx < frame_count]
@@ -1225,18 +1595,33 @@ class VideoAnalysisService:
                     "objects": []
                 }
                 
-                # 사람 메타데이터
+                # 사람 메타데이터 (🔥 하이브리드 분석 결과 포함)
                 persons = frame_data.get('persons', [])
                 for i, person in enumerate(persons, 1):
+                    # attributes에서 성별/나이 추출
+                    gender_info = person.get('attributes', {}).get('gender', {})
+                    age_info = person.get('attributes', {}).get('age', {})
+                    
+                    # 의상 색상 정보
+                    clothing_colors = person.get('clothing_colors', {})
+                    
                     person_meta = {
                         "class": "person",
                         "id": i,
                         "bbox": person.get('bbox', [0, 0, 0, 0]),
                         "confidence": person.get('confidence', 0.0),
+                        "clothing_colors": clothing_colors,  # 🔥 검색을 위해 최상위에 추가
+                        "analysis_source": person.get('analysis_source', 'unknown'),  # 🔥 분석 출처
                         "attributes": {
-                            "gender": person.get('gender', 'unknown'),
-                            "age": person.get('age', 'unknown'),
-                            "clothing": person.get('clothing', {}),
+                            "gender": gender_info.get('value', 'unknown'),
+                            "age": age_info.get('value', 'unknown'),
+                            "estimated_age": age_info.get('estimated_age', 0),
+                            "emotion": person.get('attributes', {}).get('emotion', {}).get('value', 'neutral'),
+                            "clothing": {
+                                "upper_color": clothing_colors.get('upper', 'unknown'),
+                                "lower_color": clothing_colors.get('lower', 'unknown'),
+                                "dominant_color": clothing_colors.get('upper', 'unknown')  # 호환성
+                            },
                             "pose": person.get('pose', 'unknown')
                         },
                         "scene_context": {
@@ -1395,32 +1780,31 @@ class VideoAnalysisService:
             return None
     
     def _generate_blip_caption(self, image_path):
-        """BLIP 모델을 사용한 캡션 생성 (로컬)"""
+        """🔥 하이브리드 BLIP 캡션 생성 (self.blip_model 사용)"""
         try:
-            from transformers import BlipProcessor, BlipForConditionalGeneration
-            from PIL import Image
-            import torch
-            
-            # BLIP 모델 로드 (처음 실행 시 다운로드됨)
-            processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
-            model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+            # BLIP 모델이 초기화되어 있는지 확인
+            if not self.blip_processor or not self.blip_model:
+                logger.warning("BLIP 모델이 초기화되지 않음")
+                return None
             
             # 이미지 로드
             image = Image.open(image_path).convert('RGB')
             
             # 캡션 생성
-            inputs = processor(image, return_tensors="pt")
-            out = model.generate(**inputs, max_length=50, num_beams=5)
-            caption = processor.decode(out[0], skip_special_tokens=True)
+            inputs = self.blip_processor(image, return_tensors="pt")
+            out = self.blip_model.generate(**inputs, max_length=50, num_beams=5)
+            caption = self.blip_processor.decode(out[0], skip_special_tokens=True)
             
-            # 한국어 번역 (간단한 매핑)
+            self.stats['blip_calls'] += 1
+            
+            # 한국어 번역
             korean_caption = self._translate_to_korean(caption)
             
-            logger.info(f"✅ BLIP 캡션 생성 성공: {korean_caption}")
+            logger.info(f"✅ BLIP 캡션: {korean_caption}")
             return korean_caption
             
         except Exception as e:
-            logger.error(f"❌ BLIP 캡션 생성 실패: {e}")
+            logger.warning(f"BLIP 캡션 생성 실패: {e}")
             return None
     
     def _translate_to_korean(self, english_caption):
@@ -1580,6 +1964,76 @@ class VideoAnalysisService:
         except Exception as e:
             logger.error(f"❌ 규칙 기반 캡션 생성 실패: {e}")
             return "장면 분석 중 오류 발생"
+
+    def _extract_audio_summary(self, video_path):
+        """Whisper를 사용한 오디오 요약 추출"""
+        try:
+            import whisper
+            import tempfile
+            import os
+            
+            # Whisper 모델 로드
+            model = whisper.load_model("base")
+            
+            # 비디오에서 오디오 추출 및 전사
+            result = model.transcribe(video_path)
+            
+            # 전사된 텍스트
+            transcript = result["text"]
+            
+            # 언어 감지
+            language = result.get("language", "ko")
+            
+            logger.info(f"✅ 오디오 전사 완료: {len(transcript)}자, 언어: {language}")
+            
+            return {
+                "transcript": transcript,
+                "language": language,
+                "segments": result.get("segments", []),
+                "duration": result.get("duration", 0)
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ 오디오 요약 추출 실패: {e}")
+            return None
+
+    def _generate_audio_summary(self, audio_data):
+        """오디오 데이터를 기반으로 요약 생성"""
+        try:
+            if not audio_data or not audio_data.get("transcript"):
+                return None
+            
+            transcript = audio_data["transcript"]
+            
+            # 간단한 키워드 추출
+            import re
+            
+            # 한국어 키워드 추출
+            korean_words = re.findall(r'[가-힣]+', transcript)
+            word_freq = {}
+            for word in korean_words:
+                if len(word) > 1:  # 1글자 단어 제외
+                    word_freq[word] = word_freq.get(word, 0) + 1
+            
+            # 상위 키워드
+            top_keywords = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)[:5]
+            
+            # 요약 생성
+            summary = {
+                "transcript": transcript,
+                "language": audio_data.get("language", "ko"),
+                "duration": audio_data.get("duration", 0),
+                "top_keywords": [word for word, freq in top_keywords],
+                "word_count": len(transcript.split()),
+                "summary": f"주요 내용: {', '.join([word for word, freq in top_keywords[:3]])}"
+            }
+            
+            logger.info(f"✅ 오디오 요약 생성 완료: {summary['summary']}")
+            return summary
+            
+        except Exception as e:
+            logger.error(f"❌ 오디오 요약 생성 실패: {e}")
+            return None
 
 # 전역 인스턴스 생성
 video_analysis_service = VideoAnalysisService()

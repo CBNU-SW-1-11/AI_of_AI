@@ -63,3 +63,9 @@ yolov5
 torch
 torchvision
 torchaudio
+
+# 🔥 하이브리드 분석용 라이브러리
+deepface==0.0.92
+transformers==4.36.2
+tf-keras==2.16.0
+opencv-python-headless==4.8.1.78
