@@ -22,16 +22,9 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
   useEffect(() => {
     const initializeChat = async () => {
       try {
-        // 1. LLM 캐시 초기화 (대화 맥락은 유지)
+        // LLM 캐시 초기화
         await api.post('/api/cache/clear/', { user_id: 'default_user' });
         console.log('✅ 새로고침 시 LLM 캐시 초기화 완료');
-        
-        // 2. 대화 맥락 복원
-        const contextResponse = await api.get('/api/cache/context/?user_id=default_user&limit=5');
-        if (contextResponse.data.success && contextResponse.data.context.length > 0) {
-          console.log('✅ 대화 맥락 복원 완료:', contextResponse.data.context.length, '개 대화');
-          // 필요시 대화 맥락을 UI에 표시하거나 활용
-        }
       } catch (error) {
         console.warn('⚠️ 채팅 초기화 실패:', error);
       }
@@ -317,11 +310,12 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
              // optimal 모델 처리 (다른 AI들의 응답을 포함하여)
              if (modelsToUpdate.includes('optimal')) {
                try {
-                 // JSON 형태로 데이터 전송 (judge_model 포함)
+                 // JSON 형태로 데이터 전송 (judge_model 및 selected_models 포함)
                  const requestData = {
                    message: messageText || '',
                    user_id: 'default_user',
-                   judge_model: 'GPT-3.5-turbo'  // 기본 심판 모델
+                   judge_model: 'GPT-3.5-turbo',  // 기본 심판 모델
+                   selected_models: selectedModels || []  // 사용자가 선택한 모델들
                  };
                  
                  let response;
@@ -332,6 +326,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
                    formData.append('message', messageText || '');
                    formData.append('user_id', 'default_user');
                    formData.append('judge_model', 'GPT-3.5-turbo');
+                   formData.append('selected_models', JSON.stringify(selectedModels || []));
                    
                    // 첫 번째 파일만 전송 (백엔드에서 하나씩 처리)
                    const firstFile = filesBase64[0] || imagesBase64[0];

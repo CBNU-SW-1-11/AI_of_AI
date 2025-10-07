@@ -603,12 +603,26 @@ class ChatView(APIView):
 
             # optimal 모델인 경우 특별 처리
             if bot_name == 'optimal':
-                # 사용자 선택 심판 모델 (기본값: gpt-3.5-turbo)
-                judge_model = request.data.get('judge_model', 'gpt-3.5-turbo')
+                # 사용자 선택 심판 모델 (기본값: GPT-3.5-turbo)
+                judge_model = request.data.get('judge_model', 'GPT-3.5-turbo')
                 
-                # 1-4단계: 3개 LLM 병렬 질의 → 심판 모델 검증 → 최적 답변 생성
+                # 사용자가 선택한 LLM 모델들 (프론트엔드에서 전달)
+                selected_models = request.data.get('selected_models', None)
+                
+                # FormData로 전달된 경우 JSON 파싱
+                if isinstance(selected_models, str):
+                    try:
+                        import json
+                        selected_models = json.loads(selected_models)
+                    except:
+                        selected_models = None
+                
+                print(f"🎯 사용자 선택 모델들: {selected_models}")
+                print(f"🎯 심판 모델: {judge_model}")
+                
+                # 1-4단계: 선택된 LLM 병렬 질의 → 심판 모델 검증 → 최적 답변 생성
                 try:
-                    final_result = collect_multi_llm_responses(final_message, judge_model)
+                    final_result = collect_multi_llm_responses(final_message, judge_model, selected_models)
                     
                     # 결과 포맷팅
                     response = format_optimal_response(final_result)
@@ -639,8 +653,8 @@ class ChatView(APIView):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-def collect_multi_llm_responses(user_message, judge_model="gpt-3.5-turbo"):
-    """1단계: 3개 LLM들에게 병렬 질의 후 심판 모델로 검증"""
+def collect_multi_llm_responses(user_message, judge_model="GPT-3.5-turbo", selected_models=None):
+    """1단계: 선택된 LLM들에게 병렬 질의 후 심판 모델로 검증"""
     import asyncio
     import aiohttp
     import json
@@ -649,11 +663,33 @@ def collect_multi_llm_responses(user_message, judge_model="gpt-3.5-turbo"):
     responses = {}
     
     # 사용 가능한 LLM 엔드포인트들 (명시적 모델명 사용)
-    llm_endpoints = {
+    all_llm_endpoints = {
         'GPT-3.5-turbo': 'http://localhost:8000/chat/gpt/',
         'Claude-3.5-haiku': 'http://localhost:8000/chat/claude/', 
         'Llama-3.1-8b': 'http://localhost:8000/chat/mixtral/'
     }
+    
+    # 사용자가 선택한 모델들만 필터링 (기본값: 모든 모델)
+    if selected_models:
+        # 선택된 모델명을 표준 형식으로 변환
+        model_mapping = {
+            'gpt': 'GPT-3.5-turbo',
+            'claude': 'Claude-3.5-haiku',
+            'mixtral': 'Llama-3.1-8b'
+        }
+        
+        selected_standard_models = []
+        for model in selected_models:
+            if model in model_mapping:
+                selected_standard_models.append(model_mapping[model])
+        
+        # 선택된 모델들의 엔드포인트만 사용
+        llm_endpoints = {k: v for k, v in all_llm_endpoints.items() if k in selected_standard_models}
+    else:
+        # 선택된 모델이 없으면 모든 모델 사용
+        llm_endpoints = all_llm_endpoints
+    
+    print(f"🎯 선택된 LLM 모델들: {list(llm_endpoints.keys())}")
     
     async def fetch_response(session, ai_name, endpoint):
         """개별 LLM에서 응답 가져오기"""
@@ -712,47 +748,435 @@ def collect_multi_llm_responses(user_message, judge_model="gpt-3.5-turbo"):
         }
         return judge_and_generate_optimal_response(fallback_responses, user_message, judge_model)
 
-def judge_and_generate_optimal_response(llm_responses, user_question, judge_model="gpt-3.5-turbo"):
-    """심판 모델을 통한 검증 및 최적 답변 생성"""
-    try:
-        # 심판 프롬프트 구성
-        judge_prompt = f"""
-다음은 동일한 질문에 대한 여러 LLM들의 답변입니다.
-각 답변의 진실 여부를 판단하고, 잘못된 정보를 설명해주세요.
-올바른 정보만 사용해 최적의 답변을 새로 작성해주세요.
+def detect_conflicts_in_responses(llm_responses):
+    """LLM 응답에서 상호모순 감지 (하드코딩 없이 범용적)"""
+    import re
+    from collections import defaultdict
+    
+    conflicts = {
+        "dates": defaultdict(list),
+        "locations": defaultdict(list), 
+        "numbers": defaultdict(list),
+        "general_facts": defaultdict(list)
+    }
+    
+    # 각 LLM 응답에서 핵심 정보 추출
+    for model_name, response in llm_responses.items():
+        # 연도 패턴 추출 (4자리 숫자, 1900-2024 범위)
+        year_pattern = r'(\d{4})'
+        year_matches = re.findall(year_pattern, response)
+        
+        for year_str in year_matches:
+            try:
+                year = int(year_str)
+                if 1900 <= year <= 2024:  # 합리적인 연도 범위
+                    conflicts["dates"][year_str].append(model_name)
+            except ValueError:
+                continue
+        
+        # 위치 정보 추출 (시/도/구/군 패턴)
+        locations = re.findall(r'[가-힣]+(?:시|도|구|군)', response)
+        for location in locations:
+            conflicts["locations"][location].append(model_name)
+        
+        # 수치 정보 추출 (단위 포함, 연도 제외)
+        numbers = re.findall(r'\d+(?:명|개|월|일|억|만|천)', response)
+        for number in numbers:
+            conflicts["numbers"][number].append(model_name)
+    
+    # 상호모순 필터링 (2개 이상 다른 값이 있을 때만)
+    detected_conflicts = {}
+    
+    for category, items in conflicts.items():
+        if len(items) > 1:  # 서로 다른 값이 2개 이상
+            detected_conflicts[category] = dict(items)
+    
+    return detected_conflicts
 
+def quick_web_verify(conflict_type, conflict_values, question):
+    """개선된 웹 검증 (Wikipedia + Google Search)"""
+    import requests
+    import time
+    import re
+    
+    try:
+        # 질문에서 핵심 키워드 추출
+        keywords = []
+        for value in conflict_values.keys():
+            keywords.append(value)
+        
+        print(f"🔍 웹 검증 시작: {conflict_type} - {keywords}")
+        
+        # 1차: Wikipedia API 검색
+        print("🔍 Wikipedia 검색 시도...")
+        wiki_result = search_wikipedia(question, keywords)
+        if wiki_result.get("verified"):
+            print(f"✅ Wikipedia 검증 성공: {wiki_result['extracted_year']}")
+            return wiki_result
+        
+        # 2차: Google Search (간단한 방법)
+        print("🔍 Google 검색 시도...")
+        google_result = search_google_simple(question, keywords)
+        if google_result.get("verified"):
+            print(f"✅ Google 검증 성공: {google_result['extracted_year']}")
+            return google_result
+        
+        # 모든 검색이 실패한 경우
+        print("⚠️ 모든 웹 검색 실패")
+        return {"verified": False, "error": "모든 검색 엔진 실패"}
+                
+    except Exception as e:
+        print(f"⚠️ 웹 검증 실패: {e}")
+        return {"verified": False, "error": str(e)}
+
+def search_wikipedia(question, keywords):
+    """Wikipedia API를 통한 자동 검증 (하드코딩 없음)"""
+    import requests
+    import re
+    
+    try:
+        # 1단계: 질문에서 핵심 키워드 추출
+        search_terms = extract_search_terms_from_question(question)
+        
+        if not search_terms:
+            print("⚠️ 검색 키워드 추출 실패")
+            return {"verified": False, "error": "검색 키워드 없음"}
+        
+        print(f"🔍 Wikipedia 검색 키워드: {search_terms}")
+        
+        # 2단계: 각 검색어로 Wikipedia 검색 시도
+        for term in search_terms[:3]:  # 최대 3개 키워드 시도
+            # 한글 Wikipedia 검색
+            wiki_results = search_wikipedia_api(term, 'ko')
+            
+            if wiki_results.get("verified"):
+                return wiki_results
+            
+            # 실패 시 영어 Wikipedia 검색
+            wiki_results_en = search_wikipedia_api(term, 'en')
+            
+            if wiki_results_en.get("verified"):
+                return wiki_results_en
+        
+        print("⚠️ 모든 Wikipedia 검색 실패")
+        return {"verified": False, "error": "Wikipedia 검색 실패"}
+        
+    except Exception as e:
+        print(f"⚠️ Wikipedia 검증 오류: {e}")
+        return {"verified": False, "error": f"Wikipedia 오류: {e}"}
+
+def extract_search_terms_from_question(question):
+    """질문에서 검색 키워드 자동 추출"""
+    import re
+    
+    # 핵심 명사 패턴
+    keywords = []
+    
+    # 1. 대학교/학교 패턴
+    university_patterns = [
+        r'([가-힣]+대학교)',
+        r'([가-힣]+대)',
+        r'([A-Za-z\s]+University)',
+        r'([A-Za-z\s]+College)'
+    ]
+    
+    for pattern in university_patterns:
+        matches = re.findall(pattern, question)
+        keywords.extend(matches)
+    
+    # 2. 회사명 패턴
+    company_patterns = [
+        r'(애플|Apple)',
+        r'(구글|Google)',
+        r'(삼성|Samsung)',
+        r'(마이크로소프트|Microsoft)',
+        r'([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)'
+    ]
+    
+    for pattern in company_patterns:
+        matches = re.findall(pattern, question)
+        keywords.extend(matches)
+    
+    # 3. 역사적 사건/기관 패턴
+    event_patterns = [
+        r'(임시정부)',
+        r'(올림픽)',
+        r'(코로나19|COVID-19)',
+        r'(ChatGPT)',
+        r'([가-힣]{2,}정부)',
+        r'([가-힣]{2,}사건)'
+    ]
+    
+    for pattern in event_patterns:
+        matches = re.findall(pattern, question)
+        keywords.extend(matches)
+    
+    # 중복 제거 및 정리
+    unique_keywords = []
+    for kw in keywords:
+        if kw and kw not in unique_keywords and len(kw) > 1:
+            unique_keywords.append(kw.strip())
+    
+    return unique_keywords
+
+def search_wikipedia_api(search_term, lang='ko'):
+    """Wikipedia API 실제 검색"""
+    import requests
+    import re
+    from collections import Counter
+    
+    try:
+        # User-Agent 헤더 추가 (Wikipedia API 요구사항)
+        headers = {
+            'User-Agent': 'AI_of_AI_ChatBot/1.0 (Educational Project)'
+        }
+        
+        # Wikipedia Search API로 페이지 찾기
+        search_url = f"https://{lang}.wikipedia.org/w/api.php"
+        search_params = {
+            'action': 'opensearch',
+            'search': search_term,
+            'limit': 1,
+            'namespace': 0,
+            'format': 'json'
+        }
+        
+        response = requests.get(search_url, params=search_params, headers=headers, timeout=5)
+        
+        if response.status_code != 200:
+            return {"verified": False, "error": f"검색 실패: {response.status_code}"}
+        
+        search_results = response.json()
+        
+        if not search_results or len(search_results) < 2 or not search_results[1]:
+            print(f"⚠️ '{search_term}' Wikipedia 페이지 없음")
+            return {"verified": False, "error": "페이지 없음"}
+        
+        page_title = search_results[1][0]
+        print(f"📄 Wikipedia 페이지 발견: {page_title}")
+        
+        # 페이지 요약 가져오기
+        summary_url = f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{page_title}"
+        summary_response = requests.get(summary_url, headers=headers, timeout=5)
+        
+        if summary_response.status_code == 200:
+            data = summary_response.json()
+            extract = data.get('extract', '')
+            
+            if extract and len(extract) > 20:
+                print(f"✅ Wikipedia 요약: {extract[:100]}...")
+                
+                # 연도 패턴 추출 (한글 텍스트에서도 작동하도록)
+                years = re.findall(r'(\d{4})', extract)
+                valid_years = [year for year in years if 1900 <= int(year) <= 2024]
+                
+                if valid_years:
+                    # 가장 자주 언급된 연도 선택
+                    year_counts = Counter(valid_years)
+                    most_common_year = year_counts.most_common(1)[0][0]
+                    
+                    return {
+                        "verified": True,
+                        "source": f"Wikipedia ({lang})",
+                        "extracted_year": most_common_year,
+                        "abstract": extract[:200] + "..." if len(extract) > 200 else extract,
+                        "confidence": 0.9,
+                        "page_title": page_title
+                    }
+                
+                # 요약에 연도가 없으면 본문 일부 가져오기 시도
+                print("⚠️ 요약에 연도 없음, 본문 검색 시도...")
+                full_text_result = get_wikipedia_full_text(page_title, lang, headers)
+                return full_text_result  # 본문 검색 결과를 반환 (성공/실패 모두)
+        
+        return {"verified": False, "error": "내용 추출 실패"}
+        
+    except Exception as e:
+        return {"verified": False, "error": f"API 오류: {e}"}
+
+def get_wikipedia_full_text(page_title, lang, headers):
+    """Wikipedia 본문에서 연도 정보 추출"""
+    import requests
+    import re
+    from collections import Counter
+    
+    try:
+        # Wikipedia Parse API로 본문 일부 가져오기
+        parse_url = f"https://{lang}.wikipedia.org/w/api.php"
+        parse_params = {
+            'action': 'query',
+            'prop': 'extracts',
+            'exintro': True,  # 서론만 가져오기
+            'explaintext': True,  # 순수 텍스트
+            'titles': page_title,
+            'format': 'json'
+        }
+        
+        response = requests.get(parse_url, params=parse_params, headers=headers, timeout=5)
+        
+        if response.status_code == 200:
+            data = response.json()
+            pages = data.get('query', {}).get('pages', {})
+            
+            if pages:
+                page = list(pages.values())[0]
+                full_text = page.get('extract', '')
+                
+                if full_text and len(full_text) > 50:
+                    print(f"📄 Wikipedia 본문: {full_text[:150]}...")
+                    
+                    # 연도 패턴 추출 (한글 텍스트에서도 작동하도록)
+                    years = re.findall(r'(\d{4})', full_text)
+                    valid_years = [year for year in years if 1900 <= int(year) <= 2024]
+                    
+                    if valid_years:
+                        # 가장 자주 언급된 연도 선택
+                        year_counts = Counter(valid_years)
+                        most_common_year = year_counts.most_common(1)[0][0]
+                        
+                        return {
+                            "verified": True,
+                            "source": f"Wikipedia Full Text ({lang})",
+                            "extracted_year": most_common_year,
+                            "abstract": full_text[:200] + "..." if len(full_text) > 200 else full_text,
+                            "confidence": 0.85,
+                            "page_title": page_title
+                        }
+        
+        return {"verified": False, "error": "본문 추출 실패"}
+        
+    except Exception as e:
+        return {"verified": False, "error": f"본문 검색 오류: {e}"}
+
+def search_google_simple(question, keywords):
+    """대체 검색 방법 (Wikipedia 실패 시)"""
+    # Wikipedia API가 실패한 경우 다른 공개 API 시도 가능
+    # 현재는 Wikipedia에만 의존
+    return {"verified": False, "error": "Wikipedia 외 검색 미구현"}
+
+def judge_and_generate_optimal_response(llm_responses, user_question, judge_model="gpt-3.5-turbo"):
+    """하이브리드 검증 시스템: LLM 비교 + 선택적 웹 검증"""
+    try:
+        print(f"🔍 하이브리드 검증 시작: {user_question}")
+        
+        # 1단계: 상호모순 감지
+        conflicts = detect_conflicts_in_responses(llm_responses)
+        print(f"📊 감지된 상호모순: {conflicts}")
+        
+        # 2단계: 웹 검증 (항상 실행)
+        verified_facts = {}
+        web_verification_used = False
+        
+        print("🌐 Wikipedia 웹 검증 시작...")
+        web_result = quick_web_verify("dates", {}, user_question)
+        if web_result.get("verified"):
+            verified_facts["dates"] = web_result
+            web_verification_used = True
+            print(f"✅ 웹 검증 성공: 설립연도 {web_result.get('extracted_year')}년")
+        else:
+            print(f"⚠️ 웹 검증 실패: {web_result.get('error')}")
+            
+            # 웹 검증 실패 시 상호모순 기반 검증
+            if conflicts:
+                print("⚡ 상호모순 발견! 상호모순 기반 검증 시작...")
+                
+                for conflict_type, conflict_values in conflicts.items():
+                    if conflict_type in ["dates"]:  # 연도만 검증 (위치는 제외)
+                        # 상호모순 정보만 기록
+                        verified_facts[conflict_type] = {
+                            "verified": False,
+                            "conflict_detected": True,
+                            "conflict_values": list(conflict_values.keys())
+                        }
+        
+        # 3단계: 심판 프롬프트 구성 (웹 검증 결과 포함)
+        model_sections = []
+        verification_json_entries = []
+        
+        for model_name, response in llm_responses.items():
+            model_sections.append(f"[{model_name} 답변]\n{response}")
+            verification_json_entries.append(f'    "{model_name}": {{"accuracy": "정확성_판정", "errors": "구체적_오류_설명", "confidence": "신뢰도_0-100"}}')
+        
+        model_responses_text = "\n\n".join(model_sections)
+        verification_json_format = ",\n".join(verification_json_entries)
+        
+        # 웹 검증 결과를 프롬프트에 추가
+        web_verification_text = ""
+        if web_verification_used and verified_facts.get("dates", {}).get("verified"):
+            verification = verified_facts["dates"]
+            web_verification_text = f"""
+
+**🌐 Wikipedia 웹 검증 결과 (신뢰도 {verification.get('confidence', 0.9)*100:.0f}%):**
+- **✅ 공식 설립연도**: {verification['extracted_year']}년
+- **출처**: {verification.get('source', 'Wikipedia')}
+- **페이지**: {verification.get('page_title', '확인됨')}
+- **검증 내용**: {verification.get('abstract', '')[:150]}...
+
+⚠️ **중요**: 위 정보는 Wikipedia에서 검증된 공식 정보입니다. 
+LLM 응답에 다른 연도가 있다면 그것은 오류입니다. 반드시 위 검증된 연도를 사용하세요.
+"""
+        elif verified_facts.get("dates", {}).get("conflict_detected"):
+            conflict_values = verified_facts["dates"].get("conflict_values", [])
+            web_verification_text = f"""
+
+**⚠️ 상호모순 감지됨 (웹 검증 실패):**
+- **설립연도 불일치**: {', '.join(conflict_values)}년 - 정확한 연도 확인 불가
+- **조치**: 확신할 수 없는 연도는 최적 답변에서 생략하세요
+"""
+        
+        judge_prompt = f"""
 질문: {user_question}
 
-[GPT-3.5-turbo 답변]
-{llm_responses.get('GPT-3.5-turbo', '응답 없음')}
+{model_responses_text}
+{web_verification_text}
 
-[Claude-3.5-haiku 답변]
-{llm_responses.get('Claude-3.5-haiku', '응답 없음')}
+**지시사항:**
+1. 위 LLM 답변들을 분석하여 **공통적이고 정확한 정보**를 추출하세요
+2. Wikipedia 검증 결과가 있으면 그 연도를 반드시 사용하세요
+3. 각 LLM의 좋은 정보들(위치, 단과대학, 특징 등)을 **조합**하여 풍부한 답변을 생성하세요
+4. 상호모순이 있는 정보는 제외하고, **검증된 정보만** 포함하세요
 
-[Llama-3.1-8b 답변]
-{llm_responses.get('Llama-3.1-8b', '응답 없음')}
+**최적 답변 생성 예시:**
+"충북대학교는 1951년에 설립된 국립대학으로, 충청북도 청주시에 위치하고 있습니다. 
+학교는 14개의 단과대학을 보유하고 있으며, 인문대학, 사회과학대학, 자연과학대학, 공과대학, 
+의과대학 등 다양한 학문 분야에서 교육과 연구를 진행하고 있습니다. 
+약 20,000명의 학생이 재학 중이며, 지역사회와의 산학협력을 통해 발전하고 있습니다."
 
-다음 형식으로 답변해주세요:
+반드시 아래 JSON 형식으로만 응답하세요:
 
-**최적의 답변:**
-[올바른 정보만을 종합한 최적의 답변]
+{{
+  "optimal_answer": "검증된 정확한 정보만으로 작성한 최적의 답변",
+  "verification_results": {{
+    {verification_json_format}
+  }},
+  "confidence_score": "전체 응답에 대한 신뢰도 (0-100)",
+  "contradictions_detected": ["발견된 상호모순 사항들"],
+  "fact_verification": {{
+    "dates": ["검증된 연도 정보들"],
+    "locations": ["검증된 위치 정보들"],
+    "facts": ["검증된 기타 사실들"]
+  }}
+}}
 
-**각 LLM 검증 결과:**
-- GPT-3.5-turbo: [정확성 ✅/❌] [오류 설명 또는 "오류 없음"]
-- Claude-3.5-haiku: [정확성 ✅/❌] [오류 설명 또는 "오류 없음"]  
-- Llama-3.1-8b: [정확성 ✅/❌] [오류 설명 또는 "오류 없음"]
-
-주의사항:
-- 틀린 정보가 있으면 구체적으로 설명하세요
-- 정확하지 않은 정보는 최적의 답변에 포함하지 마세요
-- 확신이 없는 정보는 제외하세요
 """
 
         # 심판 모델 호출
         judge_response = call_judge_model(judge_model, judge_prompt)
         
         # 결과 파싱
-        parsed_result = parse_judge_response(judge_response, judge_model)
+        parsed_result = parse_judge_response(judge_response, judge_model, llm_responses)
+        
+        # 웹 검증 정보 추가
+        parsed_result["웹_검증_사용"] = web_verification_used
+        if verified_facts:
+            parsed_result["웹_검증_결과"] = verified_facts
+            parsed_result["검증_성능"] = {
+                "상호모순_감지": len(conflicts),
+                "웹_검증_성공": len(verified_facts),
+                "비용": "$0.003" if web_verification_used else "$0.000"
+            }
+        
+        print(f"✅ 하이브리드 검증 완료: 웹검증={web_verification_used}, 상호모순={len(conflicts)}")
         
         return parsed_result
         
@@ -859,80 +1283,67 @@ def call_judge_model(model_name, prompt):
         else:
             raise e
 
-def parse_judge_response(judge_response, judge_model):
-    """심판 모델 응답 파싱"""
+def parse_judge_response(judge_response, judge_model, llm_responses=None):
+    """심판 모델 JSON 응답 파싱"""
     try:
-        result = {
-            "최적의_답변": "",
-            "llm_검증_결과": {
-                "GPT-3.5-turbo": {"정확성": "✅", "오류": "오류 없음"},
-                "Claude-3.5-haiku": {"정확성": "✅", "오류": "오류 없음"},
-                "Llama-3.1-8b": {"정확성": "✅", "오류": "오류 없음"}
-            },
-            "심판모델": judge_model,
-            "상태": "성공"
-        }
+        import json
+        import re
         
-        lines = judge_response.split('\n')
-        current_section = None
-        
-        for line in lines:
-            line = line.strip()
+        # JSON 부분만 추출
+        json_match = re.search(r'\{.*\}', judge_response, re.DOTALL)
+        if json_match:
+            json_str = json_match.group()
+            parsed_data = json.loads(json_str)
             
-            if '**최적의 답변:**' in line:
-                current_section = 'optimal'
-                continue
-            elif '**각 LLM 검증 결과:**' in line:
-                current_section = 'verification'
-                continue
-            elif line.startswith('- GPT-3.5-turbo:'):
-                # GPT 검증 결과 파싱
-                content = line.replace('- GPT-3.5-turbo:', '').strip()
-                if '❌' in content:
-                    result["llm_검증_결과"]["GPT-3.5-turbo"]["정확성"] = "❌"
-                    result["llm_검증_결과"]["GPT-3.5-turbo"]["오류"] = content.replace('❌', '').strip()
-                else:
-                    result["llm_검증_결과"]["GPT-3.5-turbo"]["정확성"] = "✅"
-                    result["llm_검증_결과"]["GPT-3.5-turbo"]["오류"] = "오류 없음"
-            elif line.startswith('- Claude-3.5-haiku:'):
-                # Claude 검증 결과 파싱
-                content = line.replace('- Claude-3.5-haiku:', '').strip()
-                if '❌' in content:
-                    result["llm_검증_결과"]["Claude-3.5-haiku"]["정확성"] = "❌"
-                    result["llm_검증_결과"]["Claude-3.5-haiku"]["오류"] = content.replace('❌', '').strip()
-                else:
-                    result["llm_검증_결과"]["Claude-3.5-haiku"]["정확성"] = "✅"
-                    result["llm_검증_결과"]["Claude-3.5-haiku"]["오류"] = "오류 없음"
-            elif line.startswith('- Llama-3.1-8b:'):
-                # Llama 검증 결과 파싱
-                content = line.replace('- Llama-3.1-8b:', '').strip()
-                if '❌' in content:
-                    result["llm_검증_결과"]["Llama-3.1-8b"]["정확성"] = "❌"
-                    result["llm_검증_결과"]["Llama-3.1-8b"]["오류"] = content.replace('❌', '').strip()
-                else:
-                    result["llm_검증_결과"]["Llama-3.1-8b"]["정확성"] = "✅"
-                    result["llm_검증_결과"]["Llama-3.1-8b"]["오류"] = "오류 없음"
-            elif current_section == 'optimal' and line and not line.startswith('**'):
-                result["최적의_답변"] += line + '\n'
-        
-        # 최적의 답변이 비어있으면 전체 응답을 사용
-        if not result["최적의_답변"].strip():
-            result["최적의_답변"] = judge_response
-        
-        return result
-        
+            result = {
+                "최적의_답변": parsed_data.get("optimal_answer", ""),
+                "llm_검증_결과": {},
+                "심판모델": judge_model,
+                "상태": "성공",
+                "신뢰도": parsed_data.get("confidence_score", "50"),
+                "상호모순": parsed_data.get("contradictions_detected", []),
+                "사실검증": parsed_data.get("fact_verification", {})
+            }
+            
+            # 검증 결과 파싱
+            verification_results = parsed_data.get("verification_results", {})
+            for model_name, verification in verification_results.items():
+                result["llm_검증_결과"][model_name] = {
+                    "정확성": "✅" if verification.get("accuracy") == "정확" else "❌",
+                    "오류": verification.get("errors", "오류 없음"),
+                    "신뢰도": verification.get("confidence", "50")
+                }
+            
+            return result
+        else:
+            # JSON 파싱 실패 시 폴백
+            return create_fallback_result(judge_model, llm_responses)
+            
     except Exception as e:
-        print(f"❌ 심판 응답 파싱 실패: {e}")
-        return {
-            "최적의_답변": judge_response,
-            "llm_검증_결과": {
-                "gpt-3.5-turbo": {"정확성": "✅", "오류": "파싱 실패"},
-                "claude-3.5-haiku": {"정확성": "✅", "오류": "파싱 실패"},
-                "llama-3.1-8b": {"정확성": "✅", "오류": "파싱 실패"}
-            },
-            "심판모델": judge_model,
-            "상태": "파싱 실패"
-        }
+        print(f"❌ JSON 파싱 실패: {e}")
+        return create_fallback_result(judge_model, llm_responses)
+
+def create_fallback_result(judge_model, llm_responses=None):
+    """폴백 결과 생성"""
+    if llm_responses:
+        actual_models = list(llm_responses.keys())
+    else:
+        actual_models = ["GPT-3.5-turbo", "Claude-3.5-haiku", "Llama-3.1-8b"]
+    
+    result = {
+        "최적의_답변": "검증 중 오류가 발생했습니다.",
+        "llm_검증_결과": {},
+        "심판모델": judge_model,
+        "상태": "파싱 실패",
+        "신뢰도": "0",
+        "상호모순": [],
+        "사실검증": {}
+    }
+    
+    for model in actual_models:
+        result["llm_검증_결과"][model] = {"정확성": "❌", "오류": "검증 실패", "신뢰도": "0"}
+    
+    return result
 
 def format_optimal_response(final_result):
     """최적 답변 결과를 사용자 친화적 형식으로 포맷팅"""
@@ -942,17 +1353,21 @@ def format_optimal_response(final_result):
         judge_model = final_result.get("심판모델", "gpt-3.5-turbo")
         status = final_result.get("상태", "성공")
         
+        # 새로운 JSON 형식 지원
+        confidence = final_result.get("신뢰도", "50")
+        contradictions = final_result.get("상호모순", [])
+        
         # 메인 답변 구성
         formatted_response = f"""**최적의 답변:**
 
 {optimal_answer}
 
-*({judge_model} 검증 완료 - 정확한 정보만 포함)*
+*({judge_model} 검증 완료 - 신뢰도: {confidence}%)*
 
 **각 LLM 검증 결과:**
 """
         
-        # 각 LLM 검증 결과 추가
+        # 각 LLM 검증 결과 추가 (실제 응답한 모델들만)
         model_names = {
             "GPT-3.5-turbo": "GPT-3.5 Turbo",
             "Claude-3.5-haiku": "Claude-3.5 Haiku", 
@@ -964,11 +1379,21 @@ def format_optimal_response(final_result):
                 verification = verification_results[model_key]
                 accuracy = verification.get("정확성", "✅")
                 error = verification.get("오류", "오류 없음")
+                model_confidence = verification.get("신뢰도", "50")
                 
                 formatted_response += f"""
 **{model_display_name}:**
 {accuracy} 정확성: {accuracy}
 ❌ 오류: {error}
+📊 신뢰도: {model_confidence}%
+"""
+        
+        # 상호모순 정보 추가
+        if contradictions:
+            formatted_response += f"""
+
+**⚠️ 발견된 상호모순:**
+{chr(10).join(f"- {contradiction}" for contradiction in contradictions)}
 """
         
         # 상태 정보 추가

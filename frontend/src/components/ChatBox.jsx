@@ -94,17 +94,19 @@ const OptimalResponseRenderer = ({ content }) => {
         // 새 AI 시작
         currentAI = trimmedLine.replace(/\*\*/g, '').replace(':**', '');
         currentAnalysis = { pros: [], cons: [], confidence: 0, warnings: [] };
-      } else if (trimmedLine.includes('✅ 정확성:')) {
-        // 새로운 형식: ✅ 정확성: ✅ 또는 ❌
-        const accuracy = trimmedLine.replace('✅ 정확성:', '').trim();
+      } else if (trimmedLine.includes('정확성:')) {
+        // 새로운 형식: ✅ 정확성: ✅ 또는 ❌ 정확성: ❌
+        const accuracy = trimmedLine.replace(/.*정확성:\s*/, '').trim();
         if (accuracy === '✅') {
           currentAnalysis.pros = ['정확한 정보 제공'];
-        } else {
+          currentAnalysis.confidence = 90; // 높은 신뢰도
+        } else if (accuracy === '❌') {
           currentAnalysis.pros = [];
+          currentAnalysis.confidence = 20; // 낮은 신뢰도
         }
-      } else if (trimmedLine.includes('❌ 오류:')) {
+      } else if (trimmedLine.includes('오류:')) {
         // 새로운 형식: ❌ 오류: 오류 없음 또는 구체적인 오류 설명
-        const error = trimmedLine.replace('❌ 오류:', '').trim();
+        const error = trimmedLine.replace(/.*오류:\s*/, '').trim();
         if (error && error !== '오류 없음') {
           currentAnalysis.cons = [error];
         } else {
