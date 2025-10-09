@@ -125,7 +125,7 @@ class FactualVerificationSystem:
             'who.int', 'cdc.gov', 'nih.gov',
             'unesco.org', 'un.org',
             'harvard.edu', 'mit.edu', 'stanford.edu',
-            'cbnu.ac.kr', 'snu.ac.kr', 'yonsei.ac.kr'
+            'ac.kr'  # 한국 교육기관 일반 도메인
         ]
         
         print("🔍 사실 검증 시스템 초기화 완료")

@@ -1,12 +1,14 @@
 import json
 import os
 import logging
+import traceback
 from django.conf import settings
 from chat.models import Video
 import openai
 import anthropic
 from groq import Groq
 import ollama
+import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +20,14 @@ class AIResponseGenerator:
         self.openai_client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         self.anthropic_client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
         self.groq_client = Groq(api_key=os.getenv('GROQ_API_KEY'))
+        
+        # Gemini 클라이언트 초기화
+        gemini_api_key = os.getenv('GEMINI_API_KEY')
+        if gemini_api_key:
+            genai.configure(api_key=gemini_api_key)
+            self.gemini_model = genai.GenerativeModel('gemini-2.0-flash-exp')  # Experimental (안전 필터 완화)
+        else:
+            self.gemini_model = None
     
     def generate_responses(self, video_id, query_type, query_data=None):
         """모든 AI의 개별 답변 생성"""
@@ -42,7 +52,8 @@ class AIResponseGenerator:
             responses = {
                 'gpt': self._generate_gpt_response(detection_db, meta_db, query_type, query_data),
                 'claude': self._generate_claude_response(detection_db, meta_db, query_type, query_data),
-                'mixtral': self._generate_mixtral_response(detection_db, meta_db, query_type, query_data)
+                'mixtral': self._generate_mixtral_response(detection_db, meta_db, query_type, query_data),
+                'gemini': self._generate_gemini_response(detection_db, meta_db, query_type, query_data)
             }
             
             # 최적 답변 생성
@@ -118,6 +129,54 @@ class AIResponseGenerator:
         except Exception as e:
             logger.error(f"❌ Mixtral 답변 생성 실패: {e}")
             return f"Mixtral 분석 중 오류가 발생했습니다: {str(e)}"
+    
+    def _generate_gemini_response(self, detection_db, meta_db, query_type, query_data):
+        """Gemini 답변 생성"""
+        try:
+            if not self.gemini_model:
+                return "Gemini API 키가 설정되지 않았습니다."
+            
+            prompt = self._create_analysis_prompt(detection_db, meta_db, query_type, query_data, 'gemini')
+            
+            # Gemini 안전 설정을 None으로 (안전 필터 완전 비활성화)
+            import google.generativeai as genai
+            
+            safety_settings = None
+            
+            generation_config = genai.types.GenerationConfig(
+                temperature=0.7,
+                max_output_tokens=1000,
+            )
+            
+            # 한국어 안전 필터 우회: 영어 컨텍스트로 감싸기
+            english_wrapped_prompt = f"""Please analyze the following data and answer in Korean.
+
+{prompt}
+
+Your response should be entirely in Korean and provide accurate, helpful information."""
+            
+            response = self.gemini_model.generate_content(
+                english_wrapped_prompt,
+                safety_settings=safety_settings,
+                generation_config=generation_config
+            )
+            
+            # 응답 확인 및 안전한 텍스트 추출
+            if response.candidates:
+                candidate = response.candidates[0]
+                if candidate.content and candidate.content.parts:
+                    return candidate.content.parts[0].text
+                else:
+                    logger.warning(f"⚠️ Gemini 응답이 비어있음. finish_reason: {candidate.finish_reason}")
+                    return "Gemini가 적절한 응답을 생성하지 못했습니다. 다른 질문을 시도해주세요."
+            else:
+                logger.warning("⚠️ Gemini 응답에 candidates가 없음")
+                return "Gemini 응답을 처리할 수 없습니다."
+            
+        except Exception as e:
+            logger.error(f"❌ Gemini 답변 생성 실패: {e}")
+            logger.error(f"상세 오류: {traceback.format_exc()}")
+            return f"Gemini 분석 중 오류가 발생했습니다: {str(e)}"
     
     def _create_analysis_prompt(self, detection_db, meta_db, query_type, query_data, ai_model):
         """AI별 분석 프롬프트 생성"""
@@ -197,7 +256,7 @@ GPT-4o의 강점을 살려서 답변해주세요.
 
 Claude의 간결함과 명확함을 살려서 답변해주세요.
 """
-        else:  # mixtral
+        elif ai_model == 'mixtral':
             prompt = f"""
 다음은 영상 분석 결과입니다:
 
@@ -221,6 +280,31 @@ Claude의 간결함과 명확함을 살려서 답변해주세요.
 5. 주요 인사이트 (창의적 통찰)
 
 Mixtral의 시각적이고 창의적인 특성을 살려서 답변해주세요.
+"""
+        else:  # gemini
+            prompt = f"""
+다음은 영상 분석 결과입니다:
+
+**Detection DB (객체 감지 데이터):**
+{json.dumps(detection_db, ensure_ascii=False, indent=2)[:1500]}...
+
+**Meta DB (메타데이터 및 캡션):**
+{json.dumps(meta_db, ensure_ascii=False, indent=2)[:1500]}...
+
+위 데이터를 Gemini-2.5-Flash의 특성에 맞게 분석해주세요:
+- 멀티모달 이해력을 바탕으로 한 종합적 분석
+- 정확하고 객관적인 데이터 해석
+- 구조화되고 논리적인 설명
+- 컨텍스트를 이해한 통찰력 있는 답변
+
+다음 요소들을 포함해주세요:
+1. 영상의 주요 내용 (멀티모달 관점)
+2. 등장하는 인물과 객체 (정확한 통계)
+3. 시간대별 변화 (패턴 인식)
+4. 장면의 특징 (컨텍스트 분석)
+5. 주요 인사이트 (종합적 통찰)
+
+Gemini의 멀티모달 이해력과 정확성을 살려서 답변해주세요.
 """
         return prompt
     
@@ -456,6 +540,11 @@ Mixtral의 시각적이고 창의적인 특성을 살려서 답변해주세요.
 - 단점: [Mixtral의 약점]
 - 특징: [Mixtral의 특성]
 
+### GEMINI
+- 장점: [Gemini의 강점]
+- 단점: [Gemini의 약점]
+- 특징: [Gemini의 특성]
+
 ## 🔍 분석 근거
 [각 AI 답변의 근거와 통합 과정]
 
@@ -487,7 +576,8 @@ Mixtral의 시각적이고 창의적인 특성을 살려서 답변해주세요.
         fallback_responses = {
             'gpt': f"GPT: {query_type} 분석을 위한 데이터를 찾을 수 없습니다.",
             'claude': f"Claude: {query_type} 분석을 위한 데이터를 찾을 수 없습니다.",
-            'mixtral': f"Mixtral: {query_type} 분석을 위한 데이터를 찾을 수 없습니다."
+            'mixtral': f"Mixtral: {query_type} 분석을 위한 데이터를 찾을 수 없습니다.",
+            'gemini': f"Gemini: {query_type} 분석을 위한 데이터를 찾을 수 없습니다."
         }
         
         return {

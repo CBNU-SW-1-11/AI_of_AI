@@ -1,0 +1,147 @@
+%% AI of AI 시스템 구성도
+%% 생성일: 2025-10-08
+
+graph TB
+    %% ========== 프론트엔드 ==========
+    subgraph Frontend["🖥️ 프론트엔드 (React 18)"]
+        direction LR
+        FE1["📋 영상 목록<br/><small>VideoListPage</small>"]
+        FE2["💬 영상 채팅<br/><small>VideoChatPage</small>"]
+        FE3["✨ 일반 채팅<br/><small>TextChatPage</small>"]
+        FE4["📸 OCR 도구<br/><small>OCRToolPage</small>"]
+    end
+    
+    %% ========== API 게이트웨이 ==========
+    subgraph Gateway["🌐 API 게이트웨이 (Django REST)"]
+        direction TB
+        API1["📤 영상 업로드<br/><small>upload/</small>"]
+        API2["🔍 검색 API<br/><small>search/</small>"]
+        API3["🤖 통합 채팅<br/><small>chat/integrated/</small>"]
+        API4["📝 요약 API<br/><small>summary/</small>"]
+    end
+    
+    %% ========== 영상 분석 ==========
+    subgraph VideoAnalysis["🎬 영상 분석 파이프라인"]
+        direction TB
+        VA1["1️⃣ 프레임 추출<br/><small>적응형 샘플링</small>"]
+        VA2["2️⃣ 사람 감지<br/><small>YOLO v8</small>"]
+        VA3["3️⃣ 얼굴 분석<br/><small>DeepFace 98%</small>"]
+        VA4["4️⃣ 의상 색상<br/><small>OpenCV HSV</small>"]
+        VA5["5️⃣ 장면 캡션<br/><small>BLIP-2</small>"]
+        VA6["🆘 고급 분석<br/><small>GPT-4V 2%</small>"]
+        
+        VA1 --> VA2
+        VA2 --> VA3
+        VA3 --> VA4
+        VA3 -.DeepFace 실패.-> VA6
+        VA4 --> VA5
+        VA6 -.폴백.-> VA5
+    end
+    
+    %% ========== 검색 엔진 ==========
+    subgraph Search["🔎 검색 엔진"]
+        direction LR
+        SE1["👤 인물 검색<br/><small>성별/나이/감정</small>"]
+        SE2["🎨 색상 검색<br/><small>상/하의 10색</small>"]
+        SE3["⏰ 시간대 검색<br/><small>타임스탬프</small>"]
+        SE4["🧠 시맨틱 검색<br/><small>의미 기반</small>"]
+    end
+    
+    %% ========== AI 처리 ==========
+    subgraph AICore["🧠 AI 처리 엔진"]
+        direction TB
+        
+        subgraph LLMs["대규모 언어 모델"]
+            direction LR
+            L1["GPT-4o<br/><small>창의성</small>"]
+            L2["Claude 3.5<br/><small>분석력</small>"]
+            L3["Mixtral<br/><small>효율성</small>"]
+        end
+        
+        subgraph Processing["처리 계층"]
+            direction TB
+            P1["⚡ 앙상블<br/><small>최적 답변</small>"]
+            P2["📎 첨부 분석<br/><small>PDF/이미지 OCR</small>"]
+            P3["💾 캐시<br/><small>LLM 응답</small>"]
+        end
+        
+        L1 --> P1
+        L2 --> P1
+        L3 --> P1
+        P1 --> P2
+        P3 -.캐싱.-> L1 & L2 & L3
+    end
+    
+    %% ========== 검증 시스템 ==========
+    subgraph Verification["✅ 검증 시스템"]
+        direction TB
+        V1["📖 사실 검증<br/><small>Wikipedia API</small>"]
+        V2["🔗 RAG 검증<br/><small>LangChain FAISS</small>"]
+        V3["📊 평가 지표<br/><small>신뢰도 95%</small>"]
+        V4["🎯 앙상블 학습<br/><small>모델 가중치</small>"]
+        
+        P1 --> V1
+        P1 --> V2
+        V1 --> V3
+        V2 --> V3
+        V3 --> V4
+    end
+    
+    %% ========== 외부 서비스 ==========
+    subgraph External["🌍 외부 API"]
+        direction TB
+        EX1["📚 Wikipedia<br/><small>한글/영어 자동전환</small>"]
+        EX2["🔎 Google Search<br/><small>폴백 검색</small>"]
+        EX3["☁️ OpenAI<br/><small>GPT API</small>"]
+        EX4["☁️ Anthropic<br/><small>Claude API</small>"]
+        EX5["☁️ Groq<br/><small>Mixtral API</small>"]
+    end
+    
+    %% ========== 데이터 저장소 ==========
+    subgraph DataLayer["💾 데이터 계층"]
+        direction LR
+        D1["🗄️ SQLite<br/><small>메타데이터</small>"]
+        D2["📄 JSON<br/><small>분석 결과 6K줄</small>"]
+        D3["🖼️ 미디어<br/><small>영상/이미지</small>"]
+        D4["⚡ 캐시<br/><small>Redis 스타일</small>"]
+    end
+    
+    %% ========== 연결 ==========
+    Frontend ==>|"HTTP/REST"| Gateway
+    Gateway ==>|"분석 요청"| VideoAnalysis
+    Gateway ==>|"검색 요청"| Search
+    Gateway ==>|"채팅 요청"| AICore
+    
+    VideoAnalysis ==>|"결과 저장"| DataLayer
+    Search -.->|"데이터 조회"| DataLayer
+    AICore ==>|"검증 요청"| Verification
+    
+    Verification -.->|"사실 확인"| External
+    AICore -.->|"API 호출"| External
+    
+    VideoAnalysis -.->|"영상 읽기"| D3
+    Search -.->|"JSON 검색"| D2
+    
+    %% ========== 스타일 정의 ==========
+    classDef frontend fill:#E3F2FD,stroke:#1976D2,stroke-width:3px,color:#000
+    classDef gateway fill:#FFF3E0,stroke:#F57C00,stroke-width:3px,color:#000
+    classDef video fill:#FCE4EC,stroke:#C2185B,stroke-width:3px,color:#000
+    classDef search fill:#F3E5F5,stroke:#7B1FA2,stroke-width:3px,color:#000
+    classDef ai fill:#E8F5E9,stroke:#388E3C,stroke-width:3px,color:#000
+    classDef verify fill:#FFF9C4,stroke:#F57F17,stroke-width:3px,color:#000
+    classDef external fill:#E0F2F1,stroke:#00796B,stroke-width:3px,color:#000
+    classDef data fill:#EFEBE9,stroke:#5D4037,stroke-width:3px,color:#000
+    classDef highlight fill:#FFEB3B,stroke:#F57F17,stroke-width:4px,color:#000
+    classDef optional fill:#FFECB3,stroke:#FF6F00,stroke-width:2px,stroke-dasharray:5 5,color:#000
+    
+    class Frontend frontend
+    class Gateway gateway
+    class VideoAnalysis video
+    class Search search
+    class AICore,LLMs,Processing ai
+    class Verification verify
+    class External external
+    class DataLayer data
+    class FE3,API3,P1,P3,V1,V4 highlight
+    class VA6,EX2 optional
+

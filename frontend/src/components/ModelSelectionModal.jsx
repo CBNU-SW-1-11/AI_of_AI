@@ -2,18 +2,28 @@ import React from 'react';
 import { X } from 'lucide-react';
 
 const ModelSelectionModal = ({ isOpen, onClose, selectedModels, onModelSelect, onConfirm }) => {
-  const availableModels = [
-    { id: 'gpt', name: 'GPT', description: 'OpenAI의 강력한 언어 모델' },
-    { id: 'claude', name: 'Claude', description: 'Anthropic의 안전하고 유용한 AI' },
-    { id: 'gemini', name: 'Gemini', description: 'Google의 멀티모달 AI' },
-    { id: 'mixtral', name: 'Mixtral', description: 'Mistral의 혼합 전문가 모델' },
-    { id: 'llama', name: 'Llama', description: 'Meta의 오픈소스 모델' },
-    { id: 'palm', name: 'PaLM', description: 'Google의 대규모 언어 모델' },
-    { id: 'allama', name: 'Ollama', description: '로컬 AI 모델 실행 플랫폼' },
-    { id: 'deepseek', name: 'DeepSeek', description: '딥시크의 고성능 AI 모델' },
-    { id: 'bloom', name: 'BLOOM', description: '다국어 오픈소스 언어 모델' },
-    { id: 'labs', name: 'AI21 Labs', description: 'AI21의 Jurassic 언어 모델' },
-  ];
+  // 카테고리별 모델 그룹 (Gemini, Claude, Clova, GPT 순서)
+  const modelGroups = {
+    'Gemini': [
+      { id: 'gemini-pro-1.5', name: 'Gemini Pro 1.5', description: 'Google의 최신 멀티모달 AI', price: 'expensive' },
+      { id: 'gemini-pro-1.0', name: 'Gemini Pro 1.0', description: 'Google의 안정적인 AI', price: 'cheap' },
+    ],
+    'Claude': [
+      { id: 'claude-3-opus', name: 'Claude 3 Opus', description: 'Anthropic의 최고 성능 모델', price: 'expensive' },
+      { id: 'claude-3-sonnet', name: 'Claude 3 Sonnet', description: 'Anthropic의 균형잡힌 모델', price: 'medium' },
+      { id: 'claude-3-haiku', name: 'Claude 3 Haiku', description: 'Anthropic의 빠른 모델', price: 'cheap' },
+    ],
+    'Clova': [
+      { id: 'clova-hcx-003', name: 'HCX-003', description: 'Naver의 고성능 한국어 AI', price: 'expensive' },
+      { id: 'clova-hcx-dash-001', name: 'HCX-DASH-001', description: 'Naver의 빠른 한국어 AI', price: 'cheap' },
+    ],
+    'GPT': [
+      { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'OpenAI의 최신 고성능 모델', price: 'expensive' },
+      { id: 'gpt-4o', name: 'GPT-4o', description: 'OpenAI의 옴니 모델', price: 'expensive' },
+      { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: '빠르고 효율적인 모델', price: 'cheap' },
+      { id: 'gpt-4o-mini', name: 'GPT-4o-mini', description: '경량화된 고성능 모델', price: 'cheap' },
+    ],
+  };
 
   const handleModelToggle = (modelId) => {
     if (selectedModels.includes(modelId)) {
@@ -33,64 +43,90 @@ const ModelSelectionModal = ({ isOpen, onClose, selectedModels, onModelSelect, o
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg w-80 max-h-[60vh] flex flex-col relative"> 
+      <div className="bg-white rounded-lg w-96 max-h-[75vh] flex flex-col relative"> 
         <div className="p-6">
           <X className="absolute top-3 right-3 w-6 h-6 cursor-pointer text-gray-500 hover:text-gray-700" onClick={onClose} />
           <h3 className="text-xl font-bold mb-2 text-left" style={{ color: '#2d3e2c' }}>AI 모델 선택</h3>
-          <p className="text-sm text-gray-600 mb-0.1 text-left">기본 응답을 제공할 AI 모델을 선택하세요.<br/>(최소 1개, 최대 3개)</p>
+          <p className="text-sm text-gray-600 mb-0.1 text-left">최소 1개, 최대 3개의 AI 모델을 선택하세요</p>
         </div>
         
         <div className="flex-1 overflow-y-auto px-6 border-t">
-          <div className="space-y-3 pb-4 pt-6">
-            {availableModels.map((model) => (
-              <label
-                key={model.id}
-                className={`flex items-center p-3 rounded-lg border cursor-pointer transition-all duration-200
-                  ${selectedModels.includes(model.id) 
-                    ? '' 
-                    : 'border-gray-200'}
-                  ${selectedModels.length >= 3 && !selectedModels.includes(model.id) 
-                    ? 'opacity-50 cursor-not-allowed' 
-                    : ''}`}
-                style={selectedModels.includes(model.id) 
-                  ? { 
-                      borderColor: 'rgba(139, 168, 138, 0.4)', 
-                      backgroundColor: 'rgba(139, 168, 138, 0.05)' 
-                    } 
-                  : {}}
-                onMouseEnter={(e) => {
-                  if (!selectedModels.includes(model.id) && selectedModels.length < 3) {
-                    e.currentTarget.style.backgroundColor = 'rgba(139, 168, 138, 0.05)';
-                    e.currentTarget.style.borderColor = 'rgba(139, 168, 138, 0.4)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!selectedModels.includes(model.id)) {
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                    e.currentTarget.style.borderColor = '#d1d5db';
-                  }
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedModels.includes(model.id)}
-                  onChange={() => handleModelToggle(model.id)}
-                  disabled={selectedModels.length >= 3 && !selectedModels.includes(model.id)}
-                  className="hidden"
-                />
-                <div className="flex-1">
-                  <div style={{ color: '#2d3e2c' }}>{model.name}</div>
-                  <div className="text-xs mt-1" style={{ color: '#6b7280' }}>{model.description}</div>
+          <div className="pb-4 pt-6">
+            {Object.entries(modelGroups).map(([groupName, models], groupIndex) => (
+              <div key={groupName} className={groupIndex > 0 ? 'mt-6' : ''}>
+                {/* 그룹 제목 */}
+                <h4 className="text-sm font-bold mb-3 px-1" style={{ color: '#5d7c5b' }}>
+                  {groupName}
+                </h4>
+                
+                {/* 그룹 내 모델들 */}
+                <div className="space-y-2">
+                  {models.map((model) => (
+                    <label
+                      key={model.id}
+                      className={`flex items-center p-3 rounded-lg border cursor-pointer transition-all duration-200
+                        ${selectedModels.includes(model.id) 
+                          ? '' 
+                          : 'border-gray-200'}
+                        ${selectedModels.length >= 3 && !selectedModels.includes(model.id) 
+                          ? 'opacity-50 cursor-not-allowed' 
+                          : ''}`}
+                      style={selectedModels.includes(model.id) 
+                        ? { 
+                            borderColor: 'rgba(139, 168, 138, 0.4)', 
+                            backgroundColor: 'rgba(139, 168, 138, 0.05)' 
+                          } 
+                        : {}}
+                      onMouseEnter={(e) => {
+                        if (!selectedModels.includes(model.id) && selectedModels.length < 3) {
+                          e.currentTarget.style.backgroundColor = 'rgba(139, 168, 138, 0.05)';
+                          e.currentTarget.style.borderColor = 'rgba(139, 168, 138, 0.4)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!selectedModels.includes(model.id)) {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                          e.currentTarget.style.borderColor = '#d1d5db';
+                        }
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedModels.includes(model.id)}
+                        onChange={() => handleModelToggle(model.id)}
+                        disabled={selectedModels.length >= 3 && !selectedModels.includes(model.id)}
+                        className="hidden"
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span style={{ color: '#2d3e2c' }}>{model.name}</span>
+                          {model.price === 'cheap' && (
+                            <span className="text-xs px-2 py-0.5 rounded-full font-semibold" 
+                                  style={{ backgroundColor: '#d1fae5', color: '#065f46' }}>
+                              💰 저렴
+                            </span>
+                          )}
+                          {model.price === 'expensive' && (
+                            <span className="text-xs px-2 py-0.5 rounded-full font-semibold" 
+                                  style={{ backgroundColor: '#fee2e2', color: '#991b1b' }}>
+                              💎 고가
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs mt-1" style={{ color: '#6b7280' }}>{model.description}</div>
+                      </div>
+                      {selectedModels.includes(model.id) && (
+                        <div 
+                          className="w-4 h-4 rounded-full flex items-center justify-center ml-2"
+                          style={{ background: '#5d7c5b' }}
+                        >
+                          <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
+                        </div>
+                      )}
+                    </label>
+                  ))}
                 </div>
-                {selectedModels.includes(model.id) && (
-                  <div 
-                    className="w-4 h-4 rounded-full flex items-center justify-center ml-2"
-                    style={{ background: '#5d7c5b' }}
-                  >
-                    <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
-                  </div>
-                )}
-              </label>
+              </div>
             ))}
           </div>
         </div>
