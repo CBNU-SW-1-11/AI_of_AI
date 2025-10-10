@@ -453,12 +453,28 @@ class ChatBot:
             
             if self.api_type == 'openai':
                 # OpenAI 방식 처리
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=self.conversation_history,
-                    temperature=0.7,
-                    max_tokens=1024
-                )
+                # GPT-5 시리즈는 특수 파라미터 사용
+                if self.model.startswith('gpt-5'):
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=self.conversation_history,
+                        # GPT-5는 temperature=1 (기본값)만 지원
+                        max_completion_tokens=1024
+                    )
+                elif self.model.startswith('gpt-4.1'):
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=self.conversation_history,
+                        temperature=0.7,
+                        max_completion_tokens=1024
+                    )
+                else:
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=self.conversation_history,
+                        temperature=0.7,
+                        max_tokens=1024
+                    )
                 assistant_response = response.choices[0].message.content
             
             elif self.api_type == 'anthropic':
@@ -512,8 +528,25 @@ class ChatBot:
                 try:
                     from google.generativeai.types import HarmCategory, HarmBlockThreshold
                     
-                    # 안전 설정을 None으로 (안전 필터 완전 비활성화)
-                    safety_settings = None
+                    # 안전 필터 완전 비활성화 (BLOCK_NONE)
+                    safety_settings = [
+                        {
+                            "category": HarmCategory.HARM_CATEGORY_HARASSMENT,
+                            "threshold": HarmBlockThreshold.BLOCK_NONE
+                        },
+                        {
+                            "category": HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                            "threshold": HarmBlockThreshold.BLOCK_NONE
+                        },
+                        {
+                            "category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                            "threshold": HarmBlockThreshold.BLOCK_NONE
+                        },
+                        {
+                            "category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                            "threshold": HarmBlockThreshold.BLOCK_NONE
+                        }
+                    ]
                     
                     # 한국어 안전 필터 우회 전략:
                     # 질문을 영어 컨텍스트로 감싸기
@@ -700,25 +733,48 @@ chatbots = {}
 # === GPT 모델들 ===
 try:
     if OPENAI_API_KEY:
-        chatbots['gpt-4-turbo'] = ChatBot(OPENAI_API_KEY, 'gpt-4-turbo-preview', 'openai')
+        # GPT-5 시리즈 (최신)
+        chatbots['gpt-5'] = ChatBot(OPENAI_API_KEY, 'gpt-5', 'openai')
+        chatbots['gpt-5-mini'] = ChatBot(OPENAI_API_KEY, 'gpt-5-mini', 'openai')
+        chatbots['gpt-5-chat'] = ChatBot(OPENAI_API_KEY, 'gpt-5-chat-latest', 'openai')
+        
+        # GPT-4.1 시리즈
+        chatbots['gpt-4.1'] = ChatBot(OPENAI_API_KEY, 'gpt-4.1', 'openai')
+        chatbots['gpt-4.1-mini'] = ChatBot(OPENAI_API_KEY, 'gpt-4.1-mini', 'openai')
+        
+        # GPT-4o 시리즈
         chatbots['gpt-4o'] = ChatBot(OPENAI_API_KEY, 'gpt-4o', 'openai')
-        chatbots['gpt-3.5-turbo'] = ChatBot(OPENAI_API_KEY, 'gpt-3.5-turbo', 'openai')
         chatbots['gpt-4o-mini'] = ChatBot(OPENAI_API_KEY, 'gpt-4o-mini', 'openai')
-        # 하위 호환성을 위한 기본 엔드포인트
+        
+        # 기타
+        chatbots['gpt-4-turbo'] = ChatBot(OPENAI_API_KEY, 'gpt-4-turbo', 'openai')
+        chatbots['gpt-3.5-turbo'] = ChatBot(OPENAI_API_KEY, 'gpt-3.5-turbo', 'openai')
+        
+        # 하위 호환성
         chatbots['gpt'] = ChatBot(OPENAI_API_KEY, 'gpt-4o', 'openai')
-        print(f"✅ GPT 모델 초기화 성공: gpt-4-turbo, gpt-4o, gpt-3.5-turbo, gpt-4o-mini")
+        print(f"✅ GPT 모델 초기화 성공: GPT-5, GPT-4.1, GPT-4o, GPT-4o-mini")
 except ValueError as e:
     print(f"❌ GPT 모델 초기화 실패: {e}")
 
 # === Claude 모델들 ===
 try:
     if ANTHROPIC_API_KEY:
+        # Claude-4 시리즈 (최신, API 출시 시)
+        chatbots['claude-4-opus'] = ChatBot(ANTHROPIC_API_KEY, 'claude-4-opus', 'anthropic')
+        
+        # Claude-3.7 시리즈
+        chatbots['claude-3.7-sonnet'] = ChatBot(ANTHROPIC_API_KEY, 'claude-3-7-sonnet', 'anthropic')
+        
+        # Claude-3.5 시리즈
+        chatbots['claude-3.5-sonnet'] = ChatBot(ANTHROPIC_API_KEY, 'claude-3-5-sonnet-20241022', 'anthropic')
+        chatbots['claude-3.5-haiku'] = ChatBot(ANTHROPIC_API_KEY, 'claude-3-5-haiku-20241022', 'anthropic')
+        
+        # Claude-3 시리즈
         chatbots['claude-3-opus'] = ChatBot(ANTHROPIC_API_KEY, 'claude-3-opus-20240229', 'anthropic')
-        chatbots['claude-3-sonnet'] = ChatBot(ANTHROPIC_API_KEY, 'claude-3-5-sonnet-20241022', 'anthropic')
-        chatbots['claude-3-haiku'] = ChatBot(ANTHROPIC_API_KEY, 'claude-3-5-haiku-20241022', 'anthropic')
+        
         # 하위 호환성
         chatbots['claude'] = ChatBot(ANTHROPIC_API_KEY, 'claude-3-5-sonnet-20241022', 'anthropic')
-        print(f"✅ Claude 모델 초기화 성공: opus, sonnet, haiku")
+        print(f"✅ Claude 모델 초기화 성공: Claude-4, 3.7, 3.5, 3")
 except ValueError as e:
     print(f"❌ Claude 모델 초기화 실패: {e}")
 
@@ -726,12 +782,21 @@ except ValueError as e:
 try:
     if GEMINI_API_KEY:
         genai.configure(api_key=GEMINI_API_KEY)
-        # 안전 필터가 완화된 모델 사용
-        chatbots['gemini-pro-1.5'] = ChatBot(GEMINI_API_KEY, 'gemini-2.0-flash-exp', 'gemini')  # 실험 버전 (안전 필터 완화)
-        chatbots['gemini-pro-1.0'] = ChatBot(GEMINI_API_KEY, 'gemini-2.5-flash', 'gemini')  # Flash (RPM: 15)
-        # 하위 호환성
+        
+        # Gemini 2.5 시리즈
+        chatbots['gemini-2.5-pro'] = ChatBot(GEMINI_API_KEY, 'gemini-2.5-pro', 'gemini')
+        chatbots['gemini-2.5-flash'] = ChatBot(GEMINI_API_KEY, 'gemini-2.5-flash', 'gemini')
+        
+        # Gemini 2.0 시리즈
+        chatbots['gemini-2.0-flash-exp'] = ChatBot(GEMINI_API_KEY, 'gemini-2.0-flash-exp', 'gemini')
+        chatbots['gemini-2.0-flash-lite'] = ChatBot(GEMINI_API_KEY, 'gemini-2.0-flash-lite', 'gemini')
+        
+        # 하위 호환성 (기존 프론트엔드 호환)
+        chatbots['gemini-pro-1.5'] = ChatBot(GEMINI_API_KEY, 'gemini-2.0-flash-exp', 'gemini')
+        chatbots['gemini-pro-1.0'] = ChatBot(GEMINI_API_KEY, 'gemini-2.5-flash', 'gemini')
         chatbots['gemini'] = ChatBot(GEMINI_API_KEY, 'gemini-2.5-flash', 'gemini')
-        print(f"✅ Gemini 모델 초기화 성공: 2.0-flash-exp (pro-1.5), 2.5-flash (pro-1.0)")
+        
+        print(f"✅ Gemini 모델 초기화 성공: 2.5-Pro, 2.5-Flash, 2.0-Flash-Exp, 2.0-Flash-Lite")
 except ValueError as e:
     print(f"❌ Gemini 모델 초기화 실패: {e}")
 

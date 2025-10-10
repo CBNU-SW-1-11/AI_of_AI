@@ -8,23 +8,31 @@ const WelcomePage = ({ onStartChat }) => {
   // 카테고리별 모델 그룹 (Gemini, Claude, Clova, GPT 순서)
   const modelGroups = {
     'Gemini': [
-      { id: 'gemini-pro-1.5', name: 'Gemini Pro 1.5', description: 'Google의 최신 멀티모달 AI', price: 'expensive' },
-      { id: 'gemini-pro-1.0', name: 'Gemini Pro 1.0', description: 'Google의 안정적인 AI', price: 'cheap' },
+      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: 'Google의 최고 성능 모델', price: 'expensive' },
+      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Google의 빠른 고성능 모델', price: 'medium' },
+      { id: 'gemini-2.0-flash-exp', name: 'Gemini 2.0 Flash Exp', description: 'Google의 실험 버전', price: 'expensive' },
+      { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite', description: 'Google의 경량 모델', price: 'cheap' },
     ],
     'Claude': [
-      { id: 'claude-3-opus', name: 'Claude 3 Opus', description: 'Anthropic의 최고 성능 모델', price: 'expensive' },
-      { id: 'claude-3-sonnet', name: 'Claude 3 Sonnet', description: 'Anthropic의 균형잡힌 모델', price: 'medium' },
-      { id: 'claude-3-haiku', name: 'Claude 3 Haiku', description: 'Anthropic의 빠른 모델', price: 'cheap' },
+      { id: 'claude-4-opus', name: 'Claude 4 Opus', description: 'Anthropic의 차세대 최고 성능', price: 'expensive' },
+      { id: 'claude-3.7-sonnet', name: 'Claude 3.7 Sonnet', description: 'Anthropic의 고급 추론 모델', price: 'expensive' },
+      { id: 'claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', description: 'Anthropic의 균형잡힌 모델', price: 'medium' },
+      { id: 'claude-3.5-haiku', name: 'Claude 3.5 Haiku', description: 'Anthropic의 빠른 모델', price: 'cheap' },
+      { id: 'claude-3-opus', name: 'Claude 3 Opus', description: 'Anthropic의 강력한 모델', price: 'expensive' },
     ],
     'Clova': [
       { id: 'clova-hcx-003', name: 'HCX-003', description: 'Naver의 고성능 한국어 AI', price: 'expensive' },
       { id: 'clova-hcx-dash-001', name: 'HCX-DASH-001', description: 'Naver의 빠른 한국어 AI', price: 'cheap' },
     ],
     'GPT': [
-      { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'OpenAI의 최신 고성능 모델', price: 'expensive' },
+      { id: 'gpt-5', name: 'GPT-5', description: 'OpenAI의 차세대 AI', price: 'expensive' },
+      { id: 'gpt-5-mini', name: 'GPT-5 Mini', description: 'GPT-5의 경량 버전', price: 'medium' },
+      { id: 'gpt-4.1', name: 'GPT-4.1', description: 'OpenAI의 개선된 GPT-4', price: 'expensive' },
+      { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', description: 'GPT-4.1 경량 버전', price: 'medium' },
       { id: 'gpt-4o', name: 'GPT-4o', description: 'OpenAI의 옴니 모델', price: 'expensive' },
+      { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: '경량화된 고성능 모델', price: 'cheap' },
+      { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'GPT-4 터보 버전', price: 'expensive' },
       { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: '빠르고 효율적인 모델', price: 'cheap' },
-      { id: 'gpt-4o-mini', name: 'GPT-4o-mini', description: '경량화된 고성능 모델', price: 'cheap' },
     ],
   };
 

@@ -138,10 +138,28 @@ class AIResponseGenerator:
             
             prompt = self._create_analysis_prompt(detection_db, meta_db, query_type, query_data, 'gemini')
             
-            # Gemini 안전 설정을 None으로 (안전 필터 완전 비활성화)
+            # Gemini 안전 필터 완전 비활성화 (BLOCK_NONE)
             import google.generativeai as genai
+            from google.generativeai.types import HarmCategory, HarmBlockThreshold
             
-            safety_settings = None
+            safety_settings = [
+                {
+                    "category": HarmCategory.HARM_CATEGORY_HARASSMENT,
+                    "threshold": HarmBlockThreshold.BLOCK_NONE
+                },
+                {
+                    "category": HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                    "threshold": HarmBlockThreshold.BLOCK_NONE
+                },
+                {
+                    "category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                    "threshold": HarmBlockThreshold.BLOCK_NONE
+                },
+                {
+                    "category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                    "threshold": HarmBlockThreshold.BLOCK_NONE
+                }
+            ]
             
             generation_config = genai.types.GenerationConfig(
                 temperature=0.7,
