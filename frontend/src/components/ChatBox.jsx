@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Send, CirclePlus, Image as ImageIcon, File as FileIcon, X, BarChart3, Settings } from "lucide-react";
+import { Send, CirclePlus, Image as ImageIcon, File as FileIcon, X, BarChart3, Settings, Video } from "lucide-react";
 import { useChat } from "../context/ChatContext";
 import SimilarityDetailModal from "./SimilarityDetailModal";
 import { api } from "../utils/api";
@@ -236,6 +236,10 @@ const ALLOWED_FILE_EXTS = [
   ".pdf", ".jpg", ".jpeg", ".png", ".bmp", ".tiff"
 ];
 
+const ALLOWED_VIDEO_EXTS = [
+  ".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv"
+];
+
 const ChatBox = () => {
   const {
     messages = {},
@@ -248,7 +252,7 @@ const ChatBox = () => {
 
   const [inputMessage, setInputMessage] = useState("");
   const messagesEndRefs = useRef({});
-  const textareaRef = useRef(null); // ⭐ 추가
+  const textareaRef = useRef(null);
 
   const [selectedJudgeModel, setSelectedJudgeModel] = useState("gpt-3.5-turbo");
   const [availableJudgeModels, setAvailableJudgeModels] = useState({});
@@ -256,8 +260,10 @@ const ChatBox = () => {
 
   const [imageAttachments, setImageAttachments] = useState([]);
   const [fileAttachments, setFileAttachments] = useState([]);
+  const [videoAttachments, setVideoAttachments] = useState([]);
   const imageInputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const videoInputRef = useRef(null);
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef(null);
@@ -281,7 +287,6 @@ const ChatBox = () => {
   const [similarityData, setSimilarityData] = useState({});
   const [isSimilarityModalOpen, setIsSimilarityModalOpen] = useState(false);
 
-  // ⭐ textarea 자동 높이 조절
   useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
@@ -383,6 +388,31 @@ const ChatBox = () => {
     setIsMenuOpen(false);
   };
 
+  const handleVideoChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    if (!file.type?.startsWith("video/")) {
+      alert("동영상 파일만 선택할 수 있어요.");
+      e.target.value = "";
+      return;
+    }
+
+    const lowerName = file.name.toLowerCase();
+    const allowed = ALLOWED_VIDEO_EXTS.some(ext => lowerName.endsWith(ext));
+    if (!allowed) {
+      alert(`허용되지 않는 동영상 형식입니다. 허용: ${ALLOWED_VIDEO_EXTS.join(", ")}`);
+      e.target.value = "";
+      return;
+    }
+
+    const url = URL.createObjectURL(file);
+    setVideoAttachments((prev) => [...prev, { id: generateId(), file, url, name: file.name }]);
+
+    try { e.target.value = ""; } catch {}
+    setIsMenuOpen(false);
+  };
+
   const removeImage = (id) => {
     setImageAttachments((prev) => {
       const target = prev.find((p) => p.id === id);
@@ -397,24 +427,35 @@ const ChatBox = () => {
     setFileAttachments((prev) => prev.filter((p) => p.id !== id));
   };
 
+  const removeVideo = (id) => {
+    setVideoAttachments((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target?.url) {
+        try { URL.revokeObjectURL(target.url); } catch {}
+      }
+      return prev.filter((p) => p.id !== id);
+    });
+  };
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!sendMessage) return;
 
     const trimmed = inputMessage.trim();
-    const hasAttachments = imageAttachments.length > 0 || fileAttachments.length > 0;
+    const hasAttachments = imageAttachments.length > 0 || fileAttachments.length > 0 || videoAttachments.length > 0;
     if (!trimmed && !hasAttachments) return;
 
     const requestId = generateRequestId();
 
-    // ⭐ 즉시 입력창 비우기 및 첨부파일 초기화
     const messageToSend = trimmed;
     const imagesToSend = [...imageAttachments];
     const filesToSend = [...fileAttachments];
+    const videosToSend = [...videoAttachments];
     
     setInputMessage("");
     setImageAttachments([]);
     setFileAttachments([]);
+    setVideoAttachments([]);
 
     try {
       if (typeof processImageUpload === "function" || typeof processFileUpload === "function") {
@@ -425,6 +466,9 @@ const ChatBox = () => {
         }
         if (typeof processFileUpload === "function") {
           for (const att of filesToSend) {
+            await processFileUpload(att.file, requestId, { caption: messageToSend || "" });
+          }
+          for (const att of videosToSend) {
             await processFileUpload(att.file, requestId, { caption: messageToSend || "" });
           }
         }
@@ -444,10 +488,17 @@ const ChatBox = () => {
             return { name: a.file.name, type: a.file.type, size: a.file.size, dataUrl };
           })
         );
+        const videosBase64 = await Promise.all(
+          videosToSend.map(async (a) => {
+            const dataUrl = await readFileAsDataURL(a.file);
+            return { name: a.file.name, type: a.file.type, size: a.file.size, dataUrl };
+          })
+        );
 
         const attachmentNote = [
           ...imagesToSend.map(a => `📷 ${a.file.name}`),
-          ...filesToSend.map(a => `📎 ${a.file.name}`)
+          ...filesToSend.map(a => `📎 ${a.file.name}`),
+          ...videosToSend.map(a => `🎬 ${a.file.name}`)
         ];
         const textWithNote =
           messageToSend || (attachmentNote.length ? `(첨부 전송) ${attachmentNote.join(", ")}` : "");
@@ -455,19 +506,22 @@ const ChatBox = () => {
         await sendMessage(textWithNote, requestId, {
           imagesBase64,
           filesBase64,
+          videosBase64,
         });
       }
 
-      // ⭐ URL 정리
       imagesToSend.forEach((a) => {
+        if (a.url) try { URL.revokeObjectURL(a.url); } catch {}
+      });
+      videosToSend.forEach((a) => {
         if (a.url) try { URL.revokeObjectURL(a.url); } catch {}
       });
     } catch (err) {
       console.error(err);
-      // ⭐ 에러 발생 시 메시지 복원
       setInputMessage(messageToSend);
       setImageAttachments(imagesToSend);
       setFileAttachments(filesToSend);
+      setVideoAttachments(videosToSend);
     }
   };
 
@@ -733,6 +787,13 @@ const ChatBox = () => {
           object-fit: cover;
           border: 1px solid rgba(139, 168, 138, 0.25);
         }
+        .video-thumb {
+          width: 120px;
+          height: 68px;
+          border-radius: 8px;
+          object-fit: cover;
+          border: 1px solid rgba(139, 168, 138, 0.25);
+        }
         .chip-close {
           position: absolute;
           top: -8px;
@@ -787,6 +848,10 @@ const ChatBox = () => {
         .plus-menu button:hover {
           background: rgba(139,168,138,0.12);
         }
+        .plus-menu button:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
       `}</style>
 
       <div className="flex-shrink-0 flex chat-header w-full">
@@ -815,13 +880,6 @@ const ChatBox = () => {
                 let hasSimilarityData = null;
                 if (isOptimal && !isUser) {
                   hasSimilarityData = message.similarityData;
-                  
-                  console.log('Optimal message ID:', message.id);
-                  console.log('Optimal message:', message);
-                  console.log('Has similarity data:', !!hasSimilarityData);
-                  if (hasSimilarityData) {
-                    console.log('Similarity data:', hasSimilarityData);
-                  }
                 }
                 
                 return (
@@ -903,7 +961,7 @@ const ChatBox = () => {
       </div>
 
       <div className="aiofai-input-area">
-        {(imageAttachments.length > 0 || fileAttachments.length > 0) && (
+        {(imageAttachments.length > 0 || fileAttachments.length > 0 || videoAttachments.length > 0) && (
           <div className="attachment-strip">
             {imageAttachments.map((att) => (
               <div key={att.id} className="attachment-chip">
@@ -918,6 +976,15 @@ const ChatBox = () => {
                 <FileIcon className="w-5 h-5" />
                 <span className="file-label" title={att.name}>{att.name}</span>
                 <button type="button" className="chip-close" aria-label="파일 제거" onClick={() => removeFile(att.id)}>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+            {videoAttachments.map((att) => (
+              <div key={att.id} className="attachment-chip">
+                <video src={att.url} className="video-thumb" muted />
+                <span className="file-label" title={att.name}>{att.name}</span>
+                <button type="button" className="chip-close" aria-label="동영상 제거" onClick={() => removeVideo(att.id)}>
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -937,6 +1004,13 @@ const ChatBox = () => {
           type="file"
           accept=".pdf,.jpg,.jpeg,.png,.bmp,.tiff,image/*,application/pdf"
           onChange={handleFileChange}
+          style={{ display: "none" }}
+        />
+        <input
+          ref={videoInputRef}
+          type="file"
+          accept="video/*,.mp4,.mov,.avi,.mkv,.webm,.flv,.wmv"
+          onChange={handleVideoChange}
           style={{ display: "none" }}
         />
 
@@ -989,6 +1063,10 @@ const ChatBox = () => {
               <button type="button" onClick={() => fileInputRef.current?.click()} role="menuitem" disabled={isLoading}>
                 <FileIcon className="w-4 h-4" />
                 파일 업로드
+              </button>
+              <button type="button" onClick={() => videoInputRef.current?.click()} role="menuitem" disabled={isLoading}>
+                <Video className="w-4 h-4" />
+                동영상 업로드
               </button>
             </div>
           )}
