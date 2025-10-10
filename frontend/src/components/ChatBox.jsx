@@ -7,7 +7,6 @@ import { api } from "../utils/api";
 // Optimal Response Renderer Component
 const OptimalResponseRenderer = ({ content }) => {
   const parseOptimalResponse = (text) => {
-    // content가 없거나 undefined인 경우 빈 객체 반환
     if (!text || typeof text !== 'string') {
       return {};
     }
@@ -18,7 +17,6 @@ const OptimalResponseRenderer = ({ content }) => {
     let currentContent = [];
     
     for (const line of lines) {
-      // 새로운 간결한 형식 지원
       if (line.startsWith('**최적 답변:**') || line.startsWith('**최적의 답변:**') || line.startsWith('## 🎯 정확한 답변') || line.startsWith('## 통합 답변') || line.startsWith('## 🎯 통합 답변')) {
         if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
         currentSection = 'integrated';
@@ -48,33 +46,6 @@ const OptimalResponseRenderer = ({ content }) => {
     return sections;
   };
 
-  const parseAIAnalysis = (analysisText) => {
-    const analyses = {};
-    const lines = analysisText.split('\n');
-    let currentAI = '';
-    let currentAnalysis = { pros: [], cons: [] };
-    
-    for (const line of lines) {
-      if (line.startsWith('### ')) {
-        if (currentAI) {
-          analyses[currentAI] = currentAnalysis;
-        }
-        currentAI = line.replace('### ', '').trim();
-        currentAnalysis = { pros: [], cons: [] };
-      } else if (line.includes('- 장점:')) {
-        currentAnalysis.pros.push(line.replace('- 장점:', '').trim());
-      } else if (line.includes('- 단점:')) {
-        currentAnalysis.cons.push(line.replace('- 단점:', '').trim());
-      }
-    }
-    
-    if (currentAI) {
-      analyses[currentAI] = currentAnalysis;
-    }
-    
-    return analyses;
-  };
-
   const parseNewAIAnalysis = (analysisText) => {
     const analyses = {};
     const lines = analysisText.split('\n');
@@ -84,28 +55,23 @@ const OptimalResponseRenderer = ({ content }) => {
     for (const line of lines) {
       const trimmedLine = line.trim();
       
-      // 새로운 형식: **GPT-3.5 Turbo:**, **Claude-3.5 Haiku:**, **Llama 3.1 8B:**
       if (trimmedLine.startsWith('**') && trimmedLine.endsWith(':**')) {
-        // 이전 AI 분석 저장
         if (currentAI) {
           analyses[currentAI] = currentAnalysis;
         }
         
-        // 새 AI 시작
         currentAI = trimmedLine.replace(/\*\*/g, '').replace(':**', '');
         currentAnalysis = { pros: [], cons: [], confidence: 0, warnings: [] };
       } else if (trimmedLine.includes('정확성:')) {
-        // 새로운 형식: ✅ 정확성: ✅ 또는 ❌ 정확성: ❌
         const accuracy = trimmedLine.replace(/.*정확성:\s*/, '').trim();
         if (accuracy === '✅') {
           currentAnalysis.pros = ['정확한 정보 제공'];
-          currentAnalysis.confidence = 90; // 높은 신뢰도
+          currentAnalysis.confidence = 90;
         } else if (accuracy === '❌') {
           currentAnalysis.pros = [];
-          currentAnalysis.confidence = 20; // 낮은 신뢰도
+          currentAnalysis.confidence = 20;
         }
       } else if (trimmedLine.includes('오류:')) {
-        // 새로운 형식: ❌ 오류: 오류 없음 또는 구체적인 오류 설명
         const error = trimmedLine.replace(/.*오류:\s*/, '').trim();
         if (error && error !== '오류 없음') {
           currentAnalysis.cons = [error];
@@ -139,7 +105,6 @@ const OptimalResponseRenderer = ({ content }) => {
       }
     }
     
-    // 마지막 AI 분석 저장
     if (currentAI) {
       analyses[currentAI] = currentAnalysis;
     }
@@ -147,7 +112,6 @@ const OptimalResponseRenderer = ({ content }) => {
     return analyses;
   };
 
-  // content가 없으면 기본 메시지 표시
   if (!content || typeof content !== 'string') {
     return (
       <div className="optimal-response-container">
@@ -168,22 +132,22 @@ const OptimalResponseRenderer = ({ content }) => {
 
   return (
     <div className="optimal-response-container">
-             {sections.integrated && (
-               <div className="optimal-section integrated-answer">
-                 <h3 className="section-title">
-                   최적 답변
-                 </h3>
-                 <div className="section-content">
-                   {sections.integrated}
-                 </div>
-               </div>
-             )}
+      {sections.integrated && (
+        <div className="optimal-section integrated-answer">
+          <h3 className="section-title">
+            최적 답변
+          </h3>
+          <div className="section-content">
+            {sections.integrated}
+          </div>
+        </div>
+      )}
       
-             {Object.keys(analysisData).length > 0 && (
-               <div className="optimal-section ai-analysis">
-                 <h3 className="section-title">
-                   각 AI 분석
-                 </h3>
+      {Object.keys(analysisData).length > 0 && (
+        <div className="optimal-section ai-analysis">
+          <h3 className="section-title">
+            각 AI 분석
+          </h3>
           <div className="analysis-grid">
             {Object.entries(analysisData).map(([aiName, analysis]) => (
               <div key={aiName} className="ai-analysis-card">
@@ -232,43 +196,42 @@ const OptimalResponseRenderer = ({ content }) => {
         </div>
       )}
       
-             {sections.rationale && (
-               <div className="optimal-section rationale">
-                 <h3 className="section-title">
-                   분석 근거
-                 </h3>
-                 <div className="section-content">
-                   {sections.rationale}
-                 </div>
-               </div>
-             )}
-             
-             {sections.recommendation && (
-               <div className="optimal-section recommendation">
-                 <h3 className="section-title">
-                   최종 추천
-                 </h3>
-                 <div className="section-content">
-                   {sections.recommendation}
-                 </div>
-               </div>
-             )}
-             
-             {sections.insights && (
-               <div className="optimal-section insights">
-                 <h3 className="section-title">
-                   추가 인사이트
-                 </h3>
-                 <div className="section-content">
-                   {sections.insights}
-                 </div>
-               </div>
-             )}
+      {sections.rationale && (
+        <div className="optimal-section rationale">
+          <h3 className="section-title">
+            분석 근거
+          </h3>
+          <div className="section-content">
+            {sections.rationale}
+          </div>
+        </div>
+      )}
+      
+      {sections.recommendation && (
+        <div className="optimal-section recommendation">
+          <h3 className="section-title">
+            최종 추천
+          </h3>
+          <div className="section-content">
+            {sections.recommendation}
+          </div>
+        </div>
+      )}
+      
+      {sections.insights && (
+        <div className="optimal-section insights">
+          <h3 className="section-title">
+            추가 인사이트
+          </h3>
+          <div className="section-content">
+            {sections.insights}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-// PDF와 이미지 파일 허용 확장자 목록
 const ALLOWED_FILE_EXTS = [
   ".pdf", ".jpg", ".jpeg", ".png", ".bmp", ".tiff"
 ];
@@ -279,31 +242,27 @@ const ChatBox = () => {
     sendMessage,
     isLoading,
     selectedModels = [],
-    // 선택 모델/워크플로우 기능 없음
-    processImageUpload,     // 있으면 우선 사용
-    processFileUpload       // 있으면 우선 사용
+    processImageUpload,
+    processFileUpload
   } = useChat() || {};
 
   const [inputMessage, setInputMessage] = useState("");
   const messagesEndRefs = useRef({});
+  const textareaRef = useRef(null); // ⭐ 추가
 
-  // 심판 모델 선택 상태
   const [selectedJudgeModel, setSelectedJudgeModel] = useState("gpt-3.5-turbo");
   const [availableJudgeModels, setAvailableJudgeModels] = useState({});
   const [showJudgeModelSelector, setShowJudgeModelSelector] = useState(false);
 
-  // 첨부(이미지/파일) 상태
-  const [imageAttachments, setImageAttachments] = useState([]); // { id, file, url }
-  const [fileAttachments, setFileAttachments] = useState([]);   // { id, file, name, size }
+  const [imageAttachments, setImageAttachments] = useState([]);
+  const [fileAttachments, setFileAttachments] = useState([]);
   const imageInputRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // + 버튼 메뉴
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const plusBtnRef = useRef(null);
 
-  // 심판 모델 목록 불러오기
   useEffect(() => {
     const fetchJudgeModels = async () => {
       try {
@@ -319,11 +278,25 @@ const ChatBox = () => {
     fetchJudgeModels();
   }, []);
 
-  // 유사도 분석 관련 상태
   const [similarityData, setSimilarityData] = useState({});
   const [isSimilarityModalOpen, setIsSimilarityModalOpen] = useState(false);
 
-  // 메시지 컬럼별 끝 ref 준비
+  // ⭐ textarea 자동 높이 조절
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    
+    textarea.style.height = 'auto';
+    const scrollHeight = textarea.scrollHeight;
+    const maxHeight = 120;
+    
+    if (scrollHeight > maxHeight) {
+      textarea.style.height = `${maxHeight}px`;
+    } else {
+      textarea.style.height = `${scrollHeight}px`;
+    }
+  }, [inputMessage]);
+
   useEffect(() => {
     selectedModels.concat("optimal").forEach((modelId) => {
       if (!messagesEndRefs.current[modelId]) {
@@ -332,14 +305,12 @@ const ChatBox = () => {
     });
   }, [selectedModels]);
 
-  // 새 메시지 추가 시 자동 스크롤
   useEffect(() => {
     selectedModels.concat("optimal").forEach((modelId) => {
       messagesEndRefs.current[modelId]?.current?.scrollIntoView({ behavior: "smooth" });
     });
   }, [messages, selectedModels]);
 
-  // 바깥 클릭으로 메뉴 닫기
   useEffect(() => {
     const onDocClick = (e) => {
       if (!isMenuOpen) return;
@@ -356,7 +327,6 @@ const ChatBox = () => {
   const generateId = () => `att-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
   const generateRequestId = () => `req-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 
-  // File -> Base64 dataURL
   const readFileAsDataURL = (file) =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -365,7 +335,6 @@ const ChatBox = () => {
       reader.readAsDataURL(file);
     });
 
-  // 이미지 onChange (이미지만 통과)
   const handleImageChange = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -379,17 +348,14 @@ const ChatBox = () => {
     const url = URL.createObjectURL(file);
     setImageAttachments((prev) => [...prev, { id: generateId(), file, url }]);
 
-    // 같은 파일 다시 선택해도 change 발생하도록 초기화
     try { e.target.value = ""; } catch {}
     setIsMenuOpen(false);
   };
 
-  // 파일 onChange (이미지 제외)
   const handleFileChange = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
 
-    // PDF와 이미지 파일 모두 허용
     const allowedTypes = [
       'application/pdf',
       'image/jpeg', 'image/jpg', 'image/png', 'image/bmp', 'image/tiff'
@@ -401,7 +367,6 @@ const ChatBox = () => {
       return;
     }
 
-    // 확장자 제한(선택 사항) — accept로 1차 필터링하지만 JS에서도 2차 방어
     const lowerName = file.name.toLowerCase();
     const allowed = ALLOWED_FILE_EXTS.some(ext => lowerName.endsWith(ext));
     if (!allowed) {
@@ -418,7 +383,6 @@ const ChatBox = () => {
     setIsMenuOpen(false);
   };
 
-  // 첨부 제거
   const removeImage = (id) => {
     setImageAttachments((prev) => {
       const target = prev.find((p) => p.id === id);
@@ -428,11 +392,11 @@ const ChatBox = () => {
       return prev.filter((p) => p.id !== id);
     });
   };
+  
   const removeFile = (id) => {
     setFileAttachments((prev) => prev.filter((p) => p.id !== id));
   };
 
-  // 전송
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!sendMessage) return;
@@ -443,47 +407,50 @@ const ChatBox = () => {
 
     const requestId = generateRequestId();
 
+    // ⭐ 즉시 입력창 비우기 및 첨부파일 초기화
+    const messageToSend = trimmed;
+    const imagesToSend = [...imageAttachments];
+    const filesToSend = [...fileAttachments];
+    
+    setInputMessage("");
+    setImageAttachments([]);
+    setFileAttachments([]);
+
     try {
-      // 1) 업로드 핸들러가 있으면 그쪽 경로를 우선 사용 (서버에 파일 전송)
       if (typeof processImageUpload === "function" || typeof processFileUpload === "function") {
-        // 이미지는 개별 업로드
         if (typeof processImageUpload === "function") {
-          for (const att of imageAttachments) {
-            await processImageUpload(att.file, requestId, { caption: trimmed || "" });
+          for (const att of imagesToSend) {
+            await processImageUpload(att.file, requestId, { caption: messageToSend || "" });
           }
         }
-        // 파일은 개별 업로드
         if (typeof processFileUpload === "function") {
-          for (const att of fileAttachments) {
-            await processFileUpload(att.file, requestId, { caption: trimmed || "" });
+          for (const att of filesToSend) {
+            await processFileUpload(att.file, requestId, { caption: messageToSend || "" });
           }
         }
-        // 텍스트만 남았으면 전송
-        if (trimmed) {
-          await sendMessage(trimmed, requestId, {});
+        if (messageToSend) {
+          await sendMessage(messageToSend, requestId, {});
         }
       } else {
-        // 2) 폴백: Base64로 변환해서 옵션으로 전달
         const imagesBase64 = await Promise.all(
-          imageAttachments.map(async (a) => {
-            const dataUrl = await readFileAsDataURL(a.file); // "data:image/png;base64,...."
+          imagesToSend.map(async (a) => {
+            const dataUrl = await readFileAsDataURL(a.file);
             return { name: a.file.name, type: a.file.type, size: a.file.size, dataUrl };
           })
         );
         const filesBase64 = await Promise.all(
-          fileAttachments.map(async (a) => {
+          filesToSend.map(async (a) => {
             const dataUrl = await readFileAsDataURL(a.file);
             return { name: a.file.name, type: a.file.type, size: a.file.size, dataUrl };
           })
         );
 
-        // 텍스트에 첨부 메타를 추가(서버가 options를 무시해도 인지 가능)
         const attachmentNote = [
-          ...imageAttachments.map(a => `📷 ${a.file.name}`),
-          ...fileAttachments.map(a => `📎 ${a.file.name}`)
+          ...imagesToSend.map(a => `📷 ${a.file.name}`),
+          ...filesToSend.map(a => `📎 ${a.file.name}`)
         ];
         const textWithNote =
-          trimmed || (attachmentNote.length ? `(첨부 전송) ${attachmentNote.join(", ")}` : "");
+          messageToSend || (attachmentNote.length ? `(첨부 전송) ${attachmentNote.join(", ")}` : "");
 
         await sendMessage(textWithNote, requestId, {
           imagesBase64,
@@ -491,21 +458,20 @@ const ChatBox = () => {
         });
       }
 
-      // 초기화
-      imageAttachments.forEach((a) => {
+      // ⭐ URL 정리
+      imagesToSend.forEach((a) => {
         if (a.url) try { URL.revokeObjectURL(a.url); } catch {}
       });
-      setImageAttachments([]);
-      setFileAttachments([]);
-      setInputMessage("");
     } catch (err) {
       console.error(err);
-      // 실패 시에도 첨부 유지 (사용자가 다시 시도 가능)
+      // ⭐ 에러 발생 시 메시지 복원
+      setInputMessage(messageToSend);
+      setImageAttachments(imagesToSend);
+      setFileAttachments(filesToSend);
     }
   };
 
   const loadingText = isLoading ? "분석중…" : "";
-
 
   return (
     <div className="h-full w-full flex flex-col" style={{ background: "rgba(245, 242, 234, 0.4)" }}>
@@ -531,7 +497,7 @@ const ChatBox = () => {
           display: flex;
           flex-direction: column;
           justify-content: center;
-          gap: 0.3rem; /* 위/아래 균형 */
+          gap: 0.3rem;
         }
         .aiofai-user-message {
           background: linear-gradient(135deg, #5d7c5b, #8ba88a);
@@ -556,7 +522,6 @@ const ChatBox = () => {
           line-height: 1.6;
           position: relative;
         }
-        
         .optimal-response {
           background: rgba(255, 255, 255, 0.95) !important;
           border: 2px solid rgba(139, 168, 138, 0.3) !important;
@@ -565,22 +530,18 @@ const ChatBox = () => {
           max-width: 95% !important;
           box-shadow: 0 8px 32px rgba(139, 168, 138, 0.15) !important;
         }
-        
         .optimal-response-container {
           width: 100%;
         }
-        
         .optimal-section {
           margin-bottom: 1.5rem;
           padding: 1rem;
           border-bottom: 1px solid #e5e7eb;
         }
-        
         .optimal-section:last-child {
           margin-bottom: 0;
           border-bottom: none;
         }
-        
         .section-title {
           margin: 0 0 1rem 0;
           font-size: 1rem;
@@ -589,19 +550,16 @@ const ChatBox = () => {
           text-transform: uppercase;
           letter-spacing: 0.05em;
         }
-        
         .section-content {
           color: #374151;
           line-height: 1.6;
           font-size: 0.95rem;
         }
-        
         .analysis-grid {
           display: flex;
           flex-direction: column;
           gap: 1rem;
         }
-        
         .ai-analysis-card {
           border-radius: 4px;
           padding: 1rem;
@@ -609,44 +567,36 @@ const ChatBox = () => {
           margin-bottom: 1rem;
           background: #f9fafb;
         }
-        
         .confidence-value {
           font-weight: bold;
           padding: 0.25rem 0.5rem;
           border-radius: 4px;
           margin-left: 0.5rem;
         }
-        
         .confidence-value.high {
           background-color: #dcfce7;
           color: #166534;
         }
-        
         .confidence-value.medium {
           background-color: #fef3c7;
           color: #92400e;
         }
-        
         .confidence-value.low {
           background-color: #fee2e2;
           color: #991b1b;
         }
-        
         .warnings-label {
           color: #dc2626;
           font-weight: 600;
         }
-        
         .analysis-item.warnings {
           border-left: 3px solid #dc2626;
           padding-left: 0.75rem;
           background-color: #fef2f2;
         }
-        
         .ai-analysis-card:last-child {
           margin-bottom: 0;
         }
-        
         .ai-name {
           margin: 0 0 0.75rem 0;
           font-size: 0.9rem;
@@ -655,39 +605,32 @@ const ChatBox = () => {
           border-bottom: 1px solid #d1d5db;
           padding-bottom: 0.5rem;
         }
-        
         .analysis-item {
           margin-bottom: 0.75rem;
         }
-        
         .analysis-item:last-child {
           margin-bottom: 0;
         }
-        
         .pros-label {
           color: #374151;
           font-weight: 600;
           font-size: 0.9rem;
         }
-        
         .cons-label {
           color: #374151;
           font-weight: 600;
           font-size: 0.9rem;
         }
-        
         .analysis-item ul {
           margin: 0.5rem 0 0 1rem;
           padding: 0;
         }
-        
         .analysis-item li {
           margin-bottom: 0.25rem;
           font-size: 0.9rem;
           line-height: 1.5;
           color: #4b5563;
         }
-        
         .integrated-answer,
         .rationale,
         .recommendation,
@@ -699,7 +642,7 @@ const ChatBox = () => {
           border: 1px solid #e5e7eb;
           border-radius: 12px;
           display: flex;
-          align-items: center;
+          align-items: flex-end;
           padding: 0.4rem;
           gap: 0.4rem;
           max-width: 51.2rem;
@@ -721,9 +664,28 @@ const ChatBox = () => {
           color: #2d3e2c;
           font-size: 1rem;
           border-radius: 12px;
+          resize: none;
+          min-height: 24px;
+          max-height: 120px;
+          overflow-y: auto;
+          font-family: inherit;
+          line-height: 1.5;
         }
         .input-field::placeholder {
           color: rgba(45, 62, 44, 0.5);
+        }
+        .input-field::-webkit-scrollbar {
+          width: 6px;
+        }
+        .input-field::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .input-field::-webkit-scrollbar-thumb {
+          background: rgba(139, 168, 138, 0.3);
+          border-radius: 3px;
+        }
+        .input-field::-webkit-scrollbar-thumb:hover {
+          background: rgba(139, 168, 138, 0.5);
         }
         .aiofai-icon-button {
           color: #2d3e2c;
@@ -736,6 +698,7 @@ const ChatBox = () => {
           display: inline-flex;
           align-items: center;
           justify-content: center;
+          flex-shrink: 0;
         }
         .aiofai-icon-button:hover {
           background: rgba(139, 168, 138, 0.12);
@@ -826,7 +789,6 @@ const ChatBox = () => {
         }
       `}</style>
 
-      {/* 상단 모델 라벨만 유지 */}
       <div className="flex-shrink-0 flex chat-header w-full">
         {selectedModels.concat("optimal").map((modelId) => (
           <div
@@ -839,7 +801,6 @@ const ChatBox = () => {
         ))}
       </div>
 
-      {/* 채팅 메시지 영역 */}
       <div
         className="chat-container grid overflow-hidden"
         style={{ gridTemplateColumns: `repeat(${selectedModels.length + 1}, minmax(0, 1fr))` }}
@@ -851,13 +812,10 @@ const ChatBox = () => {
                 const isUser = !!message.isUser;
                 const isOptimal = modelId === "optimal";
                 
-                // 유사도 분석 데이터 가져오기
                 let hasSimilarityData = null;
                 if (isOptimal && !isUser) {
-                  // 메시지에 직접 포함된 유사도 분석 데이터 사용
                   hasSimilarityData = message.similarityData;
                   
-                  // 디버깅용 로그
                   console.log('Optimal message ID:', message.id);
                   console.log('Optimal message:', message);
                   console.log('Has similarity data:', !!hasSimilarityData);
@@ -873,7 +831,6 @@ const ChatBox = () => {
                         <div>
                           <OptimalResponseRenderer content={message.text} />
                           
-                          {/* 유사도 분석 결과 버튼 (유사도 데이터가 있는 경우) */}
                           {hasSimilarityData && (
                             <div className="mt-3 flex justify-center">
                               <button
@@ -892,7 +849,6 @@ const ChatBox = () => {
                         </div>
                       ) : (
                         <div>
-                          {/* 사용자가 업로드한 파일들 표시 */}
                           {message.files && message.files.length > 0 ? (
                             <div className="flex flex-wrap gap-2">
                               {message.files.map((file, fileIndex) => (
@@ -946,9 +902,7 @@ const ChatBox = () => {
         ))}
       </div>
 
-      {/* 입력/첨부 영역 */}
       <div className="aiofai-input-area">
-        {/* 첨부 프리뷰 스트립 */}
         {(imageAttachments.length > 0 || fileAttachments.length > 0) && (
           <div className="attachment-strip">
             {imageAttachments.map((att) => (
@@ -971,7 +925,6 @@ const ChatBox = () => {
           </div>
         )}
 
-        {/* 숨겨진 파일 입력들 — accept로 1차 필터링 */}
         <input
           ref={imageInputRef}
           type="file"
@@ -987,18 +940,24 @@ const ChatBox = () => {
           style={{ display: "none" }}
         />
 
-        {/* 입력 박스 */}
         <form onSubmit={handleSendMessage} className="aiofai-input-box">
-          <input
-            type="text"
+          <textarea
+            ref={textareaRef}
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (!isLoading) {
+                  handleSendMessage(e);
+                }
+              }
+            }}
             placeholder="메시지를 입력하세요..."
             className="input-field"
-            disabled={isLoading}
+            rows={1}
           />
 
-          {/* + 버튼 (메뉴 토글) */}
           <button
             type="button"
             ref={plusBtnRef}
@@ -1012,27 +971,22 @@ const ChatBox = () => {
             <CirclePlus className="w-5 h-5" />
           </button>
 
-          {/* 전송 버튼 */}
           <button
             type="submit"
-            disabled={
-              isLoading ||
-              (!inputMessage.trim() && imageAttachments.length === 0 && fileAttachments.length === 0)
-            }
+            disabled={isLoading}
             className="aiofai-icon-button"
-            title="전송"
+            title={isLoading ? "분석 중..." : "전송"}
           >
             <Send className="w-5 h-5" />
           </button>
 
-          {/* + 메뉴 팝오버 */}
           {isMenuOpen && (
             <div className="plus-menu" ref={menuRef} role="menu">
-              <button type="button" onClick={() => imageInputRef.current?.click()} role="menuitem">
+              <button type="button" onClick={() => imageInputRef.current?.click()} role="menuitem" disabled={isLoading}>
                 <ImageIcon className="w-4 h-4" />
                 이미지 업로드
               </button>
-              <button type="button" onClick={() => fileInputRef.current?.click()} role="menuitem">
+              <button type="button" onClick={() => fileInputRef.current?.click()} role="menuitem" disabled={isLoading}>
                 <FileIcon className="w-4 h-4" />
                 파일 업로드
               </button>
@@ -1041,7 +995,6 @@ const ChatBox = () => {
         </form>
       </div>
 
-      {/* 유사도 분석 모달 */}
       <SimilarityDetailModal
         isOpen={isSimilarityModalOpen}
         onClose={() => setIsSimilarityModalOpen(false)}
