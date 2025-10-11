@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Send, CirclePlus, Image as ImageIcon, File as FileIcon, X, BarChart3, Settings, Video } from "lucide-react";
+import { Send, CirclePlus, Image as ImageIcon, File as FileIcon, X, BarChart3, Video } from "lucide-react";
 import { useChat } from "../context/ChatContext";
 import SimilarityDetailModal from "./SimilarityDetailModal";
 import { api } from "../utils/api";
+import { useNavigate } from "react-router-dom";
 
 // Optimal Response Renderer Component
 const OptimalResponseRenderer = ({ content }) => {
@@ -17,7 +18,7 @@ const OptimalResponseRenderer = ({ content }) => {
     let currentContent = [];
     
     for (const line of lines) {
-      if (line.startsWith('**최적 답변:**') || line.startsWith('**최적의 답변:**') || line.startsWith('## 🎯 정확한 답변') || line.startsWith('## 통합 답변') || line.startsWith('## 🎯 통합 답변')) {
+      if (line.startsWith('**최적답변:**') || line.startsWith('**최적의 답변:**') || line.startsWith('## 🎯 정확한 답변') || line.startsWith('## 통합 답변') || line.startsWith('## 🎯 통합 답변')) {
         if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
         currentSection = 'integrated';
         currentContent = [];
@@ -236,11 +237,9 @@ const ALLOWED_FILE_EXTS = [
   ".pdf", ".jpg", ".jpeg", ".png", ".bmp", ".tiff"
 ];
 
-const ALLOWED_VIDEO_EXTS = [
-  ".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv"
-];
-
 const ChatBox = () => {
+  const navigate = useNavigate();
+  
   const {
     messages = {},
     sendMessage,
@@ -260,10 +259,8 @@ const ChatBox = () => {
 
   const [imageAttachments, setImageAttachments] = useState([]);
   const [fileAttachments, setFileAttachments] = useState([]);
-  const [videoAttachments, setVideoAttachments] = useState([]);
   const imageInputRef = useRef(null);
   const fileInputRef = useRef(null);
-  const videoInputRef = useRef(null);
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef(null);
@@ -388,31 +385,6 @@ const ChatBox = () => {
     setIsMenuOpen(false);
   };
 
-  const handleVideoChange = (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-
-    if (!file.type?.startsWith("video/")) {
-      alert("동영상 파일만 선택할 수 있어요.");
-      e.target.value = "";
-      return;
-    }
-
-    const lowerName = file.name.toLowerCase();
-    const allowed = ALLOWED_VIDEO_EXTS.some(ext => lowerName.endsWith(ext));
-    if (!allowed) {
-      alert(`허용되지 않는 동영상 형식입니다. 허용: ${ALLOWED_VIDEO_EXTS.join(", ")}`);
-      e.target.value = "";
-      return;
-    }
-
-    const url = URL.createObjectURL(file);
-    setVideoAttachments((prev) => [...prev, { id: generateId(), file, url, name: file.name }]);
-
-    try { e.target.value = ""; } catch {}
-    setIsMenuOpen(false);
-  };
-
   const removeImage = (id) => {
     setImageAttachments((prev) => {
       const target = prev.find((p) => p.id === id);
@@ -427,22 +399,12 @@ const ChatBox = () => {
     setFileAttachments((prev) => prev.filter((p) => p.id !== id));
   };
 
-  const removeVideo = (id) => {
-    setVideoAttachments((prev) => {
-      const target = prev.find((p) => p.id === id);
-      if (target?.url) {
-        try { URL.revokeObjectURL(target.url); } catch {}
-      }
-      return prev.filter((p) => p.id !== id);
-    });
-  };
-
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!sendMessage) return;
 
     const trimmed = inputMessage.trim();
-    const hasAttachments = imageAttachments.length > 0 || fileAttachments.length > 0 || videoAttachments.length > 0;
+    const hasAttachments = imageAttachments.length > 0 || fileAttachments.length > 0;
     if (!trimmed && !hasAttachments) return;
 
     const requestId = generateRequestId();
@@ -450,16 +412,13 @@ const ChatBox = () => {
     const messageToSend = trimmed;
     const imagesToSend = [...imageAttachments];
     const filesToSend = [...fileAttachments];
-    const videosToSend = [...videoAttachments];
     
-    // ⭐ 즉시 초기화 (중복 전송 방지)
+    // 즉시 초기화 (중복 전송 방지)
     setInputMessage("");
     setImageAttachments([]);
     setFileAttachments([]);
-    setVideoAttachments([]);
 
     try {
-      // ⭐ processImageUpload/processFileUpload는 사용하지 않음
       // 항상 Base64 방식으로 통일
       console.log('Using Base64 fallback method');
       const imagesBase64 = await Promise.all(
@@ -474,29 +433,18 @@ const ChatBox = () => {
           return { name: a.file.name, type: a.file.type, size: a.file.size, dataUrl };
         })
       );
-      const videosBase64 = await Promise.all(
-        videosToSend.map(async (a) => {
-          const dataUrl = await readFileAsDataURL(a.file);
-          return { name: a.file.name, type: a.file.type, size: a.file.size, dataUrl };
-        })
-      );
 
       console.log('Images Base64:', imagesBase64.length);
       console.log('Files Base64:', filesBase64.length);
-      console.log('Videos Base64:', videosBase64.length);
       console.log('Message text:', messageToSend);
 
       await sendMessage(messageToSend, requestId, {
         imagesBase64,
         filesBase64,
-        videosBase64,
       });
 
       // URL 정리
       imagesToSend.forEach((a) => {
-        if (a.url) try { URL.revokeObjectURL(a.url); } catch {}
-      });
-      videosToSend.forEach((a) => {
         if (a.url) try { URL.revokeObjectURL(a.url); } catch {}
       });
     } catch (err) {
@@ -505,7 +453,6 @@ const ChatBox = () => {
       setInputMessage(messageToSend);
       setImageAttachments(imagesToSend);
       setFileAttachments(filesToSend);
-      setVideoAttachments(videosToSend);
     }
   };
 
@@ -773,13 +720,6 @@ const ChatBox = () => {
           object-fit: cover;
           border: 1px solid rgba(139, 168, 138, 0.25);
         }
-        .video-thumb {
-          width: 120px;
-          height: 68px;
-          border-radius: 8px;
-          object-fit: cover;
-          border: 1px solid rgba(139, 168, 138, 0.25);
-        }
         .chip-close {
           position: absolute;
           top: -8px;
@@ -896,23 +836,6 @@ const ChatBox = () => {
                                   {file.name || '이미지'}
                                 </div>
                               </div>
-                            ) : file.type && file.type.startsWith('video/') ? (
-                              <div>
-                                <video
-                                  src={file.dataUrl}
-                                  className="rounded-lg border border-gray-300 object-contain"
-                                  style={{ maxWidth: '300px', maxHeight: '300px' }}
-                                  controls
-                                  preload="metadata"
-                                  onError={(e) => {
-                                    e.target.style.display = 'none';
-                                    console.warn('Video load failed:', file.name);
-                                  }}
-                                />
-                                <div className="text-xs text-gray-500 mt-1 text-center">
-                                  {file.name || '동영상'}
-                                </div>
-                              </div>
                             ) : (
                               <div className="flex items-center gap-2 p-3 bg-gray-100 rounded-lg border border-gray-300">
                                 <div className="text-gray-600 text-2xl">
@@ -975,7 +898,7 @@ const ChatBox = () => {
       </div>
 
       <div className="aiofai-input-area">
-        {(imageAttachments.length > 0 || fileAttachments.length > 0 || videoAttachments.length > 0) && (
+        {(imageAttachments.length > 0 || fileAttachments.length > 0) && (
           <div className="attachment-strip">
             {imageAttachments.map((att) => (
               <div key={att.id} className="attachment-chip">
@@ -990,15 +913,6 @@ const ChatBox = () => {
                 <FileIcon className="w-5 h-5" />
                 <span className="file-label" title={att.name}>{att.name}</span>
                 <button type="button" className="chip-close" aria-label="파일 제거" onClick={() => removeFile(att.id)}>
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
-            {videoAttachments.map((att) => (
-              <div key={att.id} className="attachment-chip">
-                <video src={att.url} className="video-thumb" muted />
-                <span className="file-label" title={att.name}>{att.name}</span>
-                <button type="button" className="chip-close" aria-label="동영상 제거" onClick={() => removeVideo(att.id)}>
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -1020,13 +934,6 @@ const ChatBox = () => {
           onChange={handleFileChange}
           style={{ display: "none" }}
         />
-        <input
-          ref={videoInputRef}
-          type="file"
-          accept="video/*,.mp4,.mov,.avi,.mkv,.webm,.flv,.wmv"
-          onChange={handleVideoChange}
-          style={{ display: "none" }}
-        />
 
         <form onSubmit={handleSendMessage} className="aiofai-input-box">
           <textarea
@@ -1041,7 +948,7 @@ const ChatBox = () => {
                 }
               }
             }}
-            placeholder="메시지를 입력하세요..."
+            placeholder="메시지를 입력하세요... "
             className="input-field"
             rows={1}
           />
@@ -1078,9 +985,17 @@ const ChatBox = () => {
                 <FileIcon className="w-4 h-4" />
                 파일 업로드
               </button>
-              <button type="button" onClick={() => videoInputRef.current?.click()} role="menuitem" disabled={isLoading}>
+              <button 
+                type="button" 
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  navigate('/video-chat');
+                }} 
+                role="menuitem" 
+                disabled={isLoading}
+              >
                 <Video className="w-4 h-4" />
-                동영상 업로드
+                영상 업로드
               </button>
             </div>
           )}
