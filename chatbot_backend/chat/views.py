@@ -718,25 +718,49 @@ chatbots = {}
 # === GPT 모델들 ===
 try:
     if OPENAI_API_KEY:
-        chatbots['gpt-4-turbo'] = ChatBot(OPENAI_API_KEY, 'gpt-4-turbo-preview', 'openai')
+        # GPT-5 시리즈 (최신)
+        chatbots['gpt-5'] = ChatBot(OPENAI_API_KEY, 'gpt-5', 'openai')
+        chatbots['gpt-5-mini'] = ChatBot(OPENAI_API_KEY, 'gpt-5-mini', 'openai')
+        
+        # GPT-4.1 시리즈
+        chatbots['gpt-4.1'] = ChatBot(OPENAI_API_KEY, 'gpt-4.1', 'openai')
+        chatbots['gpt-4.1-mini'] = ChatBot(OPENAI_API_KEY, 'gpt-4.1-mini', 'openai')
+        
+        # GPT-4o 시리즈
         chatbots['gpt-4o'] = ChatBot(OPENAI_API_KEY, 'gpt-4o', 'openai')
-        chatbots['gpt-3.5-turbo'] = ChatBot(OPENAI_API_KEY, 'gpt-3.5-turbo', 'openai')
         chatbots['gpt-4o-mini'] = ChatBot(OPENAI_API_KEY, 'gpt-4o-mini', 'openai')
-        # 하위 호환성을 위한 기본 엔드포인트
+        
+        # 기타
+        chatbots['gpt-4-turbo'] = ChatBot(OPENAI_API_KEY, 'gpt-4-turbo', 'openai')
+        chatbots['gpt-3.5-turbo'] = ChatBot(OPENAI_API_KEY, 'gpt-3.5-turbo', 'openai')
+        
+        # 하위 호환성
         chatbots['gpt'] = ChatBot(OPENAI_API_KEY, 'gpt-4o', 'openai')
-        print(f"✅ GPT 모델 초기화 성공: gpt-4-turbo, gpt-4o, gpt-3.5-turbo, gpt-4o-mini")
+        print(f"✅ GPT 모델 초기화 성공: GPT-5, GPT-5-Mini, GPT-4.1, GPT-4o, GPT-4o-mini")
 except ValueError as e:
     print(f"❌ GPT 모델 초기화 실패: {e}")
 
 # === Claude 모델들 ===
 try:
     if ANTHROPIC_API_KEY:
+        # Claude-4 시리즈 (최신)
+        chatbots['claude-4-opus'] = ChatBot(ANTHROPIC_API_KEY, 'claude-4-opus', 'anthropic')
+        
+        # Claude-3.7 시리즈
+        chatbots['claude-3.7-sonnet'] = ChatBot(ANTHROPIC_API_KEY, 'claude-3-7-sonnet', 'anthropic')
+        
+        # Claude-3.5 시리즈
+        chatbots['claude-3.5-sonnet'] = ChatBot(ANTHROPIC_API_KEY, 'claude-3-5-sonnet-20241022', 'anthropic')
+        chatbots['claude-3.5-haiku'] = ChatBot(ANTHROPIC_API_KEY, 'claude-3-5-haiku-20241022', 'anthropic')
+        
+        # Claude-3 시리즈 (하위 호환)
         chatbots['claude-3-opus'] = ChatBot(ANTHROPIC_API_KEY, 'claude-3-opus-20240229', 'anthropic')
         chatbots['claude-3-sonnet'] = ChatBot(ANTHROPIC_API_KEY, 'claude-3-5-sonnet-20241022', 'anthropic')
         chatbots['claude-3-haiku'] = ChatBot(ANTHROPIC_API_KEY, 'claude-3-5-haiku-20241022', 'anthropic')
+        
         # 하위 호환성
         chatbots['claude'] = ChatBot(ANTHROPIC_API_KEY, 'claude-3-5-sonnet-20241022', 'anthropic')
-        print(f"✅ Claude 모델 초기화 성공: opus, sonnet, haiku")
+        print(f"✅ Claude 모델 초기화 성공: Claude-4, 3.7, 3.5, 3")
 except ValueError as e:
     print(f"❌ Claude 모델 초기화 실패: {e}")
 
@@ -744,12 +768,21 @@ except ValueError as e:
 try:
     if GEMINI_API_KEY:
         genai.configure(api_key=GEMINI_API_KEY)
-        # 안전 필터가 완화된 모델 사용
-        chatbots['gemini-pro-1.5'] = ChatBot(GEMINI_API_KEY, 'gemini-2.0-flash-exp', 'gemini')  # 실험 버전 (안전 필터 완화)
-        chatbots['gemini-pro-1.0'] = ChatBot(GEMINI_API_KEY, 'gemini-2.5-flash', 'gemini')  # Flash (RPM: 15)
-        # 하위 호환성
+        
+        # Gemini 2.5 시리즈
+        chatbots['gemini-2.5-pro'] = ChatBot(GEMINI_API_KEY, 'gemini-2.5-pro', 'gemini')
+        chatbots['gemini-2.5-flash'] = ChatBot(GEMINI_API_KEY, 'gemini-2.5-flash', 'gemini')
+        
+        # Gemini 2.0 시리즈
+        chatbots['gemini-2.0-flash-exp'] = ChatBot(GEMINI_API_KEY, 'gemini-2.0-flash-exp', 'gemini')
+        chatbots['gemini-2.0-flash-lite'] = ChatBot(GEMINI_API_KEY, 'gemini-2.0-flash-lite', 'gemini')
+        
+        # 하위 호환성 (기존 프론트엔드 호환)
+        chatbots['gemini-pro-1.5'] = ChatBot(GEMINI_API_KEY, 'gemini-2.0-flash-exp', 'gemini')
+        chatbots['gemini-pro-1.0'] = ChatBot(GEMINI_API_KEY, 'gemini-2.5-flash', 'gemini')
         chatbots['gemini'] = ChatBot(GEMINI_API_KEY, 'gemini-2.5-flash', 'gemini')
-        print(f"✅ Gemini 모델 초기화 성공: 2.0-flash-exp (pro-1.5), 2.5-flash (pro-1.0)")
+        
+        print(f"✅ Gemini 모델 초기화 성공: 2.5-Pro, 2.5-Flash, 2.0-Flash-Exp, 2.0-Flash-Lite")
 except ValueError as e:
     print(f"❌ Gemini 모델 초기화 실패: {e}")
 
@@ -788,6 +821,8 @@ class ChatView(APIView):
             
             chatbot = chatbots.get(bot_name)
             if not chatbot:
+                print(f"❌ Invalid bot name: {bot_name}")
+                print(f"   사용 가능한 모델: {list(chatbots.keys())[:10]}...")
                 return Response({'error': 'Invalid bot name'}, status=status.HTTP_400_BAD_REQUEST)
 
             # 파일이 업로드된 경우 처리
@@ -817,19 +852,37 @@ class ChatView(APIView):
                     
                     analyzed_content = summarize_content(extracted_content, file_path=temp_file_path)
                     
-                    # 파일 타입에 따라 다른 메시지 생성
-                    if uploaded_file.name.lower().endswith('.pdf'):
-                        final_message = f"다음 문서 내용을 한국어로 요약해주세요:\n\n{analyzed_content}"
-                    else:
-                        # 모든 AI가 이미지 분석 결과를 받아서 재구성하여 답변하도록 수정
-                        if bot_name in ['claude', 'gpt', 'mixtral', 'gemini']:
-                            final_message = f"""이미지 분석 결과를 받았습니다. 다음은 Ollama가 분석한 내용입니다:
+                    # 사용자 메시지와 파일 분석 결과를 결합
+                    if user_message and user_message.strip():
+                        # 사용자가 질문을 입력한 경우
+                        print(f"📝 사용자 질문과 파일 함께 처리: {user_message}")
+                        if uploaded_file.name.lower().endswith('.pdf'):
+                            final_message = f"""다음은 업로드된 PDF 문서의 내용입니다:
 
 {analyzed_content}
 
-위 분석 결과를 바탕으로 이 이미지에 대해 한국어로 자세하고 자연스럽게 설명해주세요. 분석 결과의 내용을 그대로 전달하되, 더 풍부하고 이해하기 쉬운 표현으로 재구성해주세요."""
+사용자 질문: {user_message}
+
+위 문서 내용을 바탕으로 사용자의 질문에 한국어로 답변해주세요."""
                         else:
-                            final_message = f"이미지를 분석해보니 {analyzed_content}입니다. 이 이미지에 대해 한국어로 자세히 설명해주세요."
+                            # 이미지인 경우
+                            final_message = f"""다음은 업로드된 이미지 분석 결과입니다:
+
+{analyzed_content}
+
+사용자 질문: {user_message}
+
+위 이미지 분석 결과를 바탕으로 사용자의 질문에 한국어로 자세히 답변해주세요."""
+                    else:
+                        # 사용자 메시지가 없으면 기본 분석 요청
+                        if uploaded_file.name.lower().endswith('.pdf'):
+                            final_message = f"다음 문서 내용을 한국어로 요약해주세요:\n\n{analyzed_content}"
+                        else:
+                            final_message = f"""이미지 분석 결과를 받았습니다:
+
+{analyzed_content}
+
+위 분석 결과를 바탕으로 이 이미지에 대해 한국어로 자세하고 자연스럽게 설명해주세요."""
                     print("분석 완료")
                 except Exception as e:
                     print(f"파일 처리 오류: {str(e)}")
@@ -900,30 +953,32 @@ def collect_multi_llm_responses(user_message, judge_model="GPT-3.5-turbo", selec
     
     # 사용 가능한 LLM 엔드포인트들 (명시적 모델명 사용)
     all_llm_endpoints = {
-        # GPT 모델들
-        'GPT-4-Turbo': 'http://localhost:8000/chat/gpt-4-turbo/',
+        # GPT 모델들 (최신 추가)
+        'GPT-5': 'http://localhost:8000/chat/gpt-5/',
+        'GPT-5-Mini': 'http://localhost:8000/chat/gpt-5-mini/',
+        'GPT-4.1': 'http://localhost:8000/chat/gpt-4.1/',
+        'GPT-4.1-Mini': 'http://localhost:8000/chat/gpt-4.1-mini/',
         'GPT-4o': 'http://localhost:8000/chat/gpt-4o/',
+        'GPT-4o-Mini': 'http://localhost:8000/chat/gpt-4o-mini/',
+        'GPT-4-Turbo': 'http://localhost:8000/chat/gpt-4-turbo/',
         'GPT-3.5-Turbo': 'http://localhost:8000/chat/gpt-3.5-turbo/',
-        'GPT-4o-mini': 'http://localhost:8000/chat/gpt-4o-mini/',
         
-        # Gemini 모델들
-        'Gemini-Pro-1.5': 'http://localhost:8000/chat/gemini-pro-1.5/',
-        'Gemini-Pro-1.0': 'http://localhost:8000/chat/gemini-pro-1.0/',
+        # Gemini 모델들 (최신 추가)
+        'Gemini-2.5-Pro': 'http://localhost:8000/chat/gemini-2.5-pro/',
+        'Gemini-2.5-Flash': 'http://localhost:8000/chat/gemini-2.5-flash/',
+        'Gemini-2.0-Flash-Exp': 'http://localhost:8000/chat/gemini-2.0-flash-exp/',
+        'Gemini-2.0-Flash-Lite': 'http://localhost:8000/chat/gemini-2.0-flash-lite/',
         
-        # Claude 모델들
+        # Claude 모델들 (최신 추가)
+        'Claude-4-Opus': 'http://localhost:8000/chat/claude-4-opus/',
+        'Claude-3.7-Sonnet': 'http://localhost:8000/chat/claude-3.7-sonnet/',
+        'Claude-3.5-Sonnet': 'http://localhost:8000/chat/claude-3.5-sonnet/',
+        'Claude-3.5-Haiku': 'http://localhost:8000/chat/claude-3.5-haiku/',
         'Claude-3-Opus': 'http://localhost:8000/chat/claude-3-opus/',
-        'Claude-3-Sonnet': 'http://localhost:8000/chat/claude-3-sonnet/',
-        'Claude-3-Haiku': 'http://localhost:8000/chat/claude-3-haiku/',
         
-        # Clova 모델들
-        'Clova-HCX-003': 'http://localhost:8000/chat/clova-hcx-003/',
-        'Clova-HCX-DASH-001': 'http://localhost:8000/chat/clova-hcx-dash-001/',
-        
-        # 하위 호환성
-        'GPT-3.5-turbo': 'http://localhost:8000/chat/gpt/',
-        'Claude-3.5-haiku': 'http://localhost:8000/chat/claude/', 
-        'Llama-3.1-8b': 'http://localhost:8000/chat/mixtral/',
-        'Gemini-2.5-Flash': 'http://localhost:8000/chat/gemini/'
+        # HyperCLOVA X 모델들
+        'HCX-003': 'http://localhost:8000/chat/clova-hcx-003/',
+        'HCX-DASH-001': 'http://localhost:8000/chat/clova-hcx-dash-001/',
     }
     
     # 사용자가 선택한 모델들만 필터링 (기본값: 모든 모델)
@@ -931,29 +986,31 @@ def collect_multi_llm_responses(user_message, judge_model="GPT-3.5-turbo", selec
         # 선택된 모델명을 표준 형식으로 변환
         model_mapping = {
             # GPT 모델들
-            'gpt-4-turbo': 'GPT-4-Turbo',
+            'gpt-5': 'GPT-5',
+            'gpt-5-mini': 'GPT-5-Mini',
+            'gpt-4.1': 'GPT-4.1',
+            'gpt-4.1-mini': 'GPT-4.1-Mini',
             'gpt-4o': 'GPT-4o',
+            'gpt-4o-mini': 'GPT-4o-Mini',
+            'gpt-4-turbo': 'GPT-4-Turbo',
             'gpt-3.5-turbo': 'GPT-3.5-Turbo',
-            'gpt-4o-mini': 'GPT-4o-mini',
             
             # Gemini 모델들
-            'gemini-pro-1.5': 'Gemini-Pro-1.5',
-            'gemini-pro-1.0': 'Gemini-Pro-1.0',
+            'gemini-2.5-pro': 'Gemini-2.5-Pro',
+            'gemini-2.5-flash': 'Gemini-2.5-Flash',
+            'gemini-2.0-flash-exp': 'Gemini-2.0-Flash-Exp',
+            'gemini-2.0-flash-lite': 'Gemini-2.0-Flash-Lite',
             
             # Claude 모델들
+            'claude-4-opus': 'Claude-4-Opus',
+            'claude-3.7-sonnet': 'Claude-3.7-Sonnet',
+            'claude-3.5-sonnet': 'Claude-3.5-Sonnet',
+            'claude-3.5-haiku': 'Claude-3.5-Haiku',
             'claude-3-opus': 'Claude-3-Opus',
-            'claude-3-sonnet': 'Claude-3-Sonnet',
-            'claude-3-haiku': 'Claude-3-Haiku',
             
-            # Clova 모델들
-            'clova-hcx-003': 'Clova-HCX-003',
-            'clova-hcx-dash-001': 'Clova-HCX-DASH-001',
-            
-            # 하위 호환성
-            'gpt': 'GPT-3.5-turbo',
-            'claude': 'Claude-3.5-haiku',
-            'mixtral': 'Llama-3.1-8b',
-            'gemini': 'Gemini-2.5-Flash'
+            # HyperCLOVA X 모델들
+            'clova-hcx-003': 'HCX-003',
+            'clova-hcx-dash-001': 'HCX-DASH-001',
         }
         
         selected_standard_models = []
@@ -1650,30 +1707,32 @@ def format_optimal_response(final_result):
         
         # 각 LLM 검증 결과 추가 (실제 응답한 모델들만)
         model_names = {
-            # GPT 모델들
-            "GPT-4-Turbo": "GPT-4 Turbo",
+            # GPT 모델들 (최신 추가)
+            "GPT-5": "GPT-5",
+            "GPT-5-Mini": "GPT-5 Mini",
+            "GPT-4.1": "GPT-4.1",
+            "GPT-4.1-Mini": "GPT-4.1 Mini",
             "GPT-4o": "GPT-4o",
+            "GPT-4o-Mini": "GPT-4o Mini",
+            "GPT-4-Turbo": "GPT-4 Turbo",
             "GPT-3.5-Turbo": "GPT-3.5 Turbo",
-            "GPT-4o-mini": "GPT-4o-mini",
             
-            # Gemini 모델들
-            "Gemini-Pro-1.5": "Gemini Pro 1.5",
-            "Gemini-Pro-1.0": "Gemini Pro 1.0",
+            # Gemini 모델들 (최신 추가)
+            "Gemini-2.5-Pro": "Gemini 2.5 Pro",
+            "Gemini-2.5-Flash": "Gemini 2.5 Flash",
+            "Gemini-2.0-Flash-Exp": "Gemini 2.0 Flash Exp",
+            "Gemini-2.0-Flash-Lite": "Gemini 2.0 Flash Lite",
             
-            # Claude 모델들
+            # Claude 모델들 (최신 추가)
+            "Claude-4-Opus": "Claude 4 Opus",
+            "Claude-3.7-Sonnet": "Claude 3.7 Sonnet",
+            "Claude-3.5-Sonnet": "Claude 3.5 Sonnet",
+            "Claude-3.5-Haiku": "Claude 3.5 Haiku",
             "Claude-3-Opus": "Claude 3 Opus",
-            "Claude-3-Sonnet": "Claude 3 Sonnet",
-            "Claude-3-Haiku": "Claude 3 Haiku",
             
-            # Clova 모델들
-            "Clova-HCX-003": "HCX-003",
-            "Clova-HCX-DASH-001": "HCX-DASH-001",
-            
-            # 하위 호환성
-            "GPT-3.5-turbo": "GPT-3.5 Turbo",
-            "Claude-3.5-haiku": "Claude-3.5 Haiku", 
-            "Llama-3.1-8b": "Llama 3.1 8B",
-            "Gemini-2.5-Flash": "Gemini 2.5 Flash"
+            # HyperCLOVA X 모델들
+            "HCX-003": "HyperCLOVA X HCX-003",
+            "HCX-DASH-001": "HyperCLOVA X HCX-DASH-001",
         }
         
         for model_key, model_display_name in model_names.items():

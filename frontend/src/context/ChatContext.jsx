@@ -71,6 +71,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
 
     const modelsToUpdate = [...selectedModels, "optimal"];
     
+    // 사용자 메시지를 한 번만 추가 (중복 방지)
     setMessages(prevMessages => {
       const newMessages = { ...prevMessages };
       
@@ -78,7 +79,11 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
         if (!newMessages[modelId]) {
           newMessages[modelId] = [];
         }
-        newMessages[modelId] = [...newMessages[modelId], userMessage];
+        // 중복 체크: 같은 ID의 메시지가 이미 있으면 추가하지 않음
+        const alreadyExists = newMessages[modelId].some(msg => msg.id === userMessage.id);
+        if (!alreadyExists) {
+          newMessages[modelId] = [...newMessages[modelId], userMessage];
+        }
       });
       
       return newMessages;
