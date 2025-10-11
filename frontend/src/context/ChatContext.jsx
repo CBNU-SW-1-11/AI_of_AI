@@ -1,15 +1,78 @@
 // context/ChatContext.jsx
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { api } from '../utils/api';
 
 const ChatContext = createContext();
 
+const MESSAGES_KEY = "aiofai:messages"; // {conversationId: {modelId: messages[]}}
+const HISTORY_KEY = "aiofai:conversations";
+
 export const ChatProvider = ({ children, initialModels = [] }) => {
+  const location = useLocation();
   const [selectedModels, setSelectedModels] = useState(initialModels);
   const [messages, setMessages] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [loadingModels, setLoadingModels] = useState(new Set());
   const [loadingProgress, setLoadingProgress] = useState({});
+  const [currentConversationId, setCurrentConversationId] = useState(null);
+
+  // URL에서 현재 대화 ID 가져오기
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const cid = params.get('cid');
+    setCurrentConversationId(cid);
+  }, [location.search]);
+
+  // 대화 ID가 변경되면 해당 대화의 메시지 불러오기
+  useEffect(() => {
+    if (!currentConversationId) {
+      setMessages({});
+      return;
+    }
+
+    try {
+      const allMessages = JSON.parse(sessionStorage.getItem(MESSAGES_KEY) || '{}');
+      const conversationMessages = allMessages[currentConversationId] || {};
+      setMessages(conversationMessages);
+    } catch (error) {
+      console.error('메시지 불러오기 실패:', error);
+      setMessages({});
+    }
+  }, [currentConversationId]);
+
+  // 메시지 저장 함수
+  const saveMessages = (conversationId, newMessages) => {
+    if (!conversationId) return;
+    
+    try {
+      const allMessages = JSON.parse(sessionStorage.getItem(MESSAGES_KEY) || '{}');
+      allMessages[conversationId] = newMessages;
+      sessionStorage.setItem(MESSAGES_KEY, JSON.stringify(allMessages));
+      
+      // 히스토리 업데이트 (제목과 시간)
+      const history = JSON.parse(sessionStorage.getItem(HISTORY_KEY) || '[]');
+      const conversationIndex = history.findIndex(item => item.id === conversationId);
+      
+      if (conversationIndex !== -1) {
+        // 첫 사용자 메시지로 제목 업데이트
+        const firstUserMessage = Object.values(newMessages)[0]?.find(msg => msg.isUser)?.text;
+        if (firstUserMessage) {
+          history[conversationIndex].title = firstUserMessage.slice(0, 30) + (firstUserMessage.length > 30 ? '...' : '');
+        }
+        history[conversationIndex].updatedAt = Date.now();
+        sessionStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+        
+        // storage 이벤트 수동 발생
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: HISTORY_KEY,
+          newValue: JSON.stringify(history)
+        }));
+      }
+    } catch (error) {
+      console.error('메시지 저장 실패:', error);
+    }
+  };
 
   useEffect(() => {
     if (initialModels.length > 0) {
@@ -31,6 +94,11 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
   }, []);
 
   const sendMessage = async (messageText, requestId = null, options = {}) => {
+    if (!currentConversationId) {
+      console.error('대화 ID가 없습니다.');
+      return;
+    }
+
     const filesBase64 = options.filesBase64 || [];
     const imagesBase64 = options.imagesBase64 || [];
     const videosBase64 = options.videosBase64 || [];
@@ -86,6 +154,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
         }
       });
       
+      saveMessages(currentConversationId, newMessages);
       return newMessages;
     });
 
@@ -150,6 +219,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
               newMessages[modelId] = [];
             }
             newMessages[modelId] = [...newMessages[modelId], aiMessage];
+            saveMessages(currentConversationId, newMessages);
             return newMessages;
           });
 
@@ -194,6 +264,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
               newMessages[modelId] = [];
             }
             newMessages[modelId] = [...newMessages[modelId], errorMessage];
+            saveMessages(currentConversationId, newMessages);
             return newMessages;
           });
           
@@ -260,6 +331,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
                   }
                   newMessages['_similarityData'][userMessage.id] = analysisResult;
                   console.log('Similarity data saved. Current _similarityData:', newMessages['_similarityData']);
+                  saveMessages(currentConversationId, newMessages);
                   return newMessages;
                 });
               } catch (error) {
@@ -342,6 +414,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
             };
 
             newMessages['optimal'] = [...newMessages['optimal'], optimalMessage];
+            saveMessages(currentConversationId, newMessages);
             return newMessages;
           });
 
@@ -379,6 +452,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
               newMessages['optimal'] = [];
             }
             newMessages['optimal'] = [...newMessages['optimal'], errorMessage];
+            saveMessages(currentConversationId, newMessages);
             return newMessages;
           });
         }
@@ -424,7 +498,8 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
       loadingProgress,
       getCacheStatistics,
       clearConversationContext,
-      sendMessage
+      sendMessage,
+      currentConversationId
     }}>
       {children}
     </ChatContext.Provider>

@@ -245,17 +245,12 @@ const ChatBox = () => {
     sendMessage,
     isLoading,
     selectedModels = [],
-    processImageUpload,
-    processFileUpload
+    currentConversationId
   } = useChat() || {};
 
   const [inputMessage, setInputMessage] = useState("");
   const messagesEndRefs = useRef({});
   const textareaRef = useRef(null);
-
-  const [selectedJudgeModel, setSelectedJudgeModel] = useState("gpt-3.5-turbo");
-  const [availableJudgeModels, setAvailableJudgeModels] = useState({});
-  const [showJudgeModelSelector, setShowJudgeModelSelector] = useState(false);
 
   const [imageAttachments, setImageAttachments] = useState([]);
   const [fileAttachments, setFileAttachments] = useState([]);
@@ -265,21 +260,6 @@ const ChatBox = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const plusBtnRef = useRef(null);
-
-  useEffect(() => {
-    const fetchJudgeModels = async () => {
-      try {
-        const response = await api.get('/api/verification/models/');
-        if (response.data.success) {
-          setAvailableJudgeModels(response.data.models);
-        }
-      } catch (error) {
-        console.warn('심판 모델 목록 조회 실패:', error);
-      }
-    };
-
-    fetchJudgeModels();
-  }, []);
 
   const [similarityData, setSimilarityData] = useState({});
   const [isSimilarityModalOpen, setIsSimilarityModalOpen] = useState(false);
@@ -401,7 +381,7 @@ const ChatBox = () => {
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!sendMessage) return;
+    if (!sendMessage || !currentConversationId) return;
 
     const trimmed = inputMessage.trim();
     const hasAttachments = imageAttachments.length > 0 || fileAttachments.length > 0;
@@ -457,6 +437,15 @@ const ChatBox = () => {
   };
 
   const loadingText = isLoading ? "분석중…" : "";
+
+  // 대화 ID가 없으면 빈 화면 표시
+  if (!currentConversationId) {
+    return (
+      <div className="h-full w-full flex items-center justify-center" style={{ background: "rgba(245, 242, 234, 0.4)" }}>
+        <div className="text-gray-500">대화를 시작하세요...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full w-full flex flex-col" style={{ background: "rgba(245, 242, 234, 0.4)" }}>
@@ -948,7 +937,7 @@ const ChatBox = () => {
                 }
               }
             }}
-            placeholder="메시지를 입력하세요... "
+            placeholder="메시지를 입력하세요..."
             className="input-field"
             rows={1}
           />
