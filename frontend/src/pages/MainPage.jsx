@@ -119,11 +119,7 @@ const MainPage = () => {
                 로그아웃
               </button>
 
-              <Video
-                className="w-6 h-6 text-gray-600 cursor-pointer transition-all duration-300 hover:scale-110"
-                onClick={() => navigate('/video-chat')}
-                title="영상 채팅"
-              />
+              
               <CirclePlus
                 className="w-6 h-6 text-gray-600 cursor-pointer transition-all duration-300 hover:scale-110"
                 onClick={() => setIsModelModalOpen(true)}
@@ -138,11 +134,7 @@ const MainPage = () => {
           ) : (
             // 로그인되지 않은 상태
             <>
-              <Video
-                className="w-6 h-6 text-gray-600 cursor-pointer transition-all duration-300 hover:scale-110"
-                onClick={() => navigate('/video-chat')}
-                title="영상 채팅"
-              />
+              
               <CirclePlus
                 className="w-6 h-6 text-gray-600 cursor-pointer transition-all duration-300 hover:scale-110"
                 onClick={() => setIsModelModalOpen(true)}
