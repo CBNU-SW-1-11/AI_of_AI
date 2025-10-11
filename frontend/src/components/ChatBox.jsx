@@ -452,64 +452,47 @@ const ChatBox = () => {
     const filesToSend = [...fileAttachments];
     const videosToSend = [...videoAttachments];
     
+    // ⭐ 즉시 초기화 (중복 전송 방지)
     setInputMessage("");
     setImageAttachments([]);
     setFileAttachments([]);
     setVideoAttachments([]);
 
     try {
-      if (typeof processImageUpload === "function" || typeof processFileUpload === "function") {
-        if (typeof processImageUpload === "function") {
-          for (const att of imagesToSend) {
-            await processImageUpload(att.file, requestId, { caption: messageToSend || "" });
-          }
-        }
-        if (typeof processFileUpload === "function") {
-          for (const att of filesToSend) {
-            await processFileUpload(att.file, requestId, { caption: messageToSend || "" });
-          }
-          for (const att of videosToSend) {
-            await processFileUpload(att.file, requestId, { caption: messageToSend || "" });
-          }
-        }
-        if (messageToSend) {
-          await sendMessage(messageToSend, requestId, {});
-        }
-      } else {
-        const imagesBase64 = await Promise.all(
-          imagesToSend.map(async (a) => {
-            const dataUrl = await readFileAsDataURL(a.file);
-            return { name: a.file.name, type: a.file.type, size: a.file.size, dataUrl };
-          })
-        );
-        const filesBase64 = await Promise.all(
-          filesToSend.map(async (a) => {
-            const dataUrl = await readFileAsDataURL(a.file);
-            return { name: a.file.name, type: a.file.type, size: a.file.size, dataUrl };
-          })
-        );
-        const videosBase64 = await Promise.all(
-          videosToSend.map(async (a) => {
-            const dataUrl = await readFileAsDataURL(a.file);
-            return { name: a.file.name, type: a.file.type, size: a.file.size, dataUrl };
-          })
-        );
+      // ⭐ processImageUpload/processFileUpload는 사용하지 않음
+      // 항상 Base64 방식으로 통일
+      console.log('Using Base64 fallback method');
+      const imagesBase64 = await Promise.all(
+        imagesToSend.map(async (a) => {
+          const dataUrl = await readFileAsDataURL(a.file);
+          return { name: a.file.name, type: a.file.type, size: a.file.size, dataUrl };
+        })
+      );
+      const filesBase64 = await Promise.all(
+        filesToSend.map(async (a) => {
+          const dataUrl = await readFileAsDataURL(a.file);
+          return { name: a.file.name, type: a.file.type, size: a.file.size, dataUrl };
+        })
+      );
+      const videosBase64 = await Promise.all(
+        videosToSend.map(async (a) => {
+          const dataUrl = await readFileAsDataURL(a.file);
+          return { name: a.file.name, type: a.file.type, size: a.file.size, dataUrl };
+        })
+      );
 
-        const attachmentNote = [
-          ...imagesToSend.map(a => `📷 ${a.file.name}`),
-          ...filesToSend.map(a => `📎 ${a.file.name}`),
-          ...videosToSend.map(a => `🎬 ${a.file.name}`)
-        ];
-        const textWithNote =
-          messageToSend || (attachmentNote.length ? `(첨부 전송) ${attachmentNote.join(", ")}` : "");
+      console.log('Images Base64:', imagesBase64.length);
+      console.log('Files Base64:', filesBase64.length);
+      console.log('Videos Base64:', videosBase64.length);
+      console.log('Message text:', messageToSend);
 
-        await sendMessage(textWithNote, requestId, {
-          imagesBase64,
-          filesBase64,
-          videosBase64,
-        });
-      }
+      await sendMessage(messageToSend, requestId, {
+        imagesBase64,
+        filesBase64,
+        videosBase64,
+      });
 
+      // URL 정리
       imagesToSend.forEach((a) => {
         if (a.url) try { URL.revokeObjectURL(a.url); } catch {}
       });
@@ -518,6 +501,7 @@ const ChatBox = () => {
       });
     } catch (err) {
       console.error(err);
+      // 에러 발생 시 복원
       setInputMessage(messageToSend);
       setImageAttachments(imagesToSend);
       setFileAttachments(filesToSend);
@@ -563,6 +547,7 @@ const ChatBox = () => {
           font-weight: 500;
           line-height: 1.5;
           position: relative;
+          min-height: 20px;
         }
         .aiofai-bot-message {
           background: rgba(255, 255, 255, 0.8);
@@ -575,6 +560,7 @@ const ChatBox = () => {
           box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
           line-height: 1.6;
           position: relative;
+          min-height: 20px;
         }
         .optimal-response {
           background: rgba(255, 255, 255, 0.95) !important;
@@ -877,70 +863,98 @@ const ChatBox = () => {
                 const isUser = !!message.isUser;
                 const isOptimal = modelId === "optimal";
                 
+                if (!message || (!message.text && !message.files)) {
+                  console.warn('Invalid message detected:', message);
+                  return null;
+                }
+                
                 let hasSimilarityData = null;
                 if (isOptimal && !isUser) {
                   hasSimilarityData = message.similarityData;
                 }
                 
                 return (
-                  <div key={`${modelId}-${index}`} className={`flex ${isUser ? "justify-end" : "justify-start"} mb-4`}>
-                    <div className={`${isUser ? "aiofai-user-message" : "aiofai-bot-message"} ${isOptimal && !isUser ? "optimal-response" : ""}`}>
-                      {isOptimal && !isUser ? (
-                        <div>
-                          <OptimalResponseRenderer content={message.text} />
-                          
-                          {hasSimilarityData && (
-                            <div className="mt-3 flex justify-center">
-                              <button
-                                onClick={() => {
-                                  setSimilarityData(hasSimilarityData);
-                                  setIsSimilarityModalOpen(true);
-                                }}
-                                className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors font-medium"
-                                title="유사도 분석 결과 보기"
-                              >
-                                <BarChart3 size={16} />
-                                유사도 분석 결과
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div>
-                          {message.files && message.files.length > 0 ? (
-                            <div className="flex flex-wrap gap-2">
-                              {message.files.map((file, fileIndex) => (
-                                <div key={fileIndex} className="relative">
-                                  {file.type.startsWith('image/') ? (
-                                    <div>
-                                      <img
-                                        src={file.dataUrl}
-                                        alt={file.name}
-                                        className="max-w-xs max-h-48 rounded-lg border border-gray-200 object-cover"
-                                      />
-                                      <div className="text-xs text-gray-500 mt-1 text-center">
-                                        {file.name}
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <div className="flex items-center gap-2 p-2 bg-gray-100 rounded-lg border border-gray-200">
-                                      <div className="text-gray-600">
-                                        📄
-                                      </div>
-                                      <span className="text-sm text-gray-700 truncate max-w-32">
-                                        {file.name}
-                                      </span>
-                                    </div>
-                                  )}
+                  <div key={`${modelId}-${index}`} className={`flex ${isUser ? "justify-end" : "justify-start"} mb-4 flex-col ${isUser ? "items-end" : "items-start"}`}>
+                    {message.files && message.files.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-2 max-w-[85%]">
+                        {message.files.map((file, fileIndex) => (
+                          <div key={fileIndex} className="relative">
+                            {file.type && file.type.startsWith('image/') ? (
+                              <div>
+                                <img
+                                  src={file.dataUrl}
+                                  alt={file.name || 'image'}
+                                  className="rounded-lg border border-gray-300 object-contain"
+                                  style={{ maxWidth: '300px', maxHeight: '300px' }}
+                                  loading="eager"
+                                  onError={(e) => {
+                                    e.target.style.display = 'none';
+                                    console.warn('Image load failed:', file.name);
+                                  }}
+                                />
+                                <div className="text-xs text-gray-500 mt-1 text-center">
+                                  {file.name || '이미지'}
                                 </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div>{message.text}</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                              </div>
+                            ) : file.type && file.type.startsWith('video/') ? (
+                              <div>
+                                <video
+                                  src={file.dataUrl}
+                                  className="rounded-lg border border-gray-300 object-contain"
+                                  style={{ maxWidth: '300px', maxHeight: '300px' }}
+                                  controls
+                                  preload="metadata"
+                                  onError={(e) => {
+                                    e.target.style.display = 'none';
+                                    console.warn('Video load failed:', file.name);
+                                  }}
+                                />
+                                <div className="text-xs text-gray-500 mt-1 text-center">
+                                  {file.name || '동영상'}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2 p-3 bg-gray-100 rounded-lg border border-gray-300">
+                                <div className="text-gray-600 text-2xl">
+                                  📄
+                                </div>
+                                <span className="text-sm text-gray-700">
+                                  {file.name || '파일'}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {message.text && (
+                      <div className={`${isUser ? "aiofai-user-message" : "aiofai-bot-message"} ${isOptimal && !isUser ? "optimal-response" : ""}`}>
+                        {isOptimal && !isUser ? (
+                          <div>
+                            <OptimalResponseRenderer content={message.text} />
+                            
+                            {hasSimilarityData && (
+                              <div className="mt-3 flex justify-center">
+                                <button
+                                  onClick={() => {
+                                    setSimilarityData(hasSimilarityData);
+                                    setIsSimilarityModalOpen(true);
+                                  }}
+                                  className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors font-medium"
+                                  title="유사도 분석 결과 보기"
+                                >
+                                  <BarChart3 size={16} />
+                                  유사도 분석 결과
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div>{message.text}</div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
