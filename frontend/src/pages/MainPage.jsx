@@ -7,10 +7,12 @@ import Sidebar from "../components/Sidebar";
 import ChatBox from "../components/ChatBox";
 import { Menu, Settings, UserCircle, CirclePlus, Video } from "lucide-react";
 import { logout } from "../store/authSlice";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import ModelSelectionModal from "../components/ModelSelectionModal";
 import { useChat } from "../context/ChatContext";
 import HeaderLogo from "../components/HeaderLogo";
+
+const HISTORY_KEY = "aiofai:conversations";
 
 const MainPage = () => {
   const [isSidebarVisible, setIsSidebarVisible] = useState(false);
@@ -22,6 +24,40 @@ const MainPage = () => {
   const user = useSelector((state) => state.auth.user);
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // 페이지 로드 시 대화 ID 확인 및 생성
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const cid = params.get('cid');
+    
+    if (!cid) {
+      // 대화 ID가 없으면 새 대화 생성
+      const newId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+      const newConversation = {
+        id: newId,
+        title: "새 대화",
+        updatedAt: Date.now()
+      };
+      
+      try {
+        const history = JSON.parse(sessionStorage.getItem(HISTORY_KEY) || '[]');
+        const updatedHistory = [newConversation, ...history].slice(0, 100);
+        sessionStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
+        
+        // storage 이벤트 발생
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: HISTORY_KEY,
+          newValue: JSON.stringify(updatedHistory)
+        }));
+      } catch (error) {
+        console.error('히스토리 저장 실패:', error);
+      }
+      
+      // replace: true로 설정하여 뒤로가기 시 이전 페이지로
+      navigate(`/?cid=${newId}`, { replace: true });
+    }
+  }, [location.search, navigate]);
 
   // 로그인 성공 시 로그인 모달 자동 닫기
   useEffect(() => {
@@ -48,7 +84,6 @@ const MainPage = () => {
     localStorage.removeItem("accessToken");
     localStorage.removeItem("user");
     dispatch(logout());
-    // 로그아웃 후 Welcome 페이지로 이동하지 않고 현재 페이지 유지
   };
 
   // 배경 애니메이션 스타일
@@ -96,10 +131,9 @@ const MainPage = () => {
             className="w-6 h-6 text-gray-600 cursor-pointer transition-all duration-300 hover:scale-110"
             onClick={() => setIsSidebarVisible((v) => !v)}
           />
-        <HeaderLogo/>
+          <HeaderLogo />
         </div>
 
-        {/* ▼ 여기부터 조건부 렌더(user ? ... : ...) */}
         <div className="flex items-center space-x-4">
           {user ? (
             // 로그인된 상태
@@ -119,7 +153,11 @@ const MainPage = () => {
                 로그아웃
               </button>
 
-              
+              <Video
+                className="w-6 h-6 text-gray-600 cursor-pointer transition-all duration-300 hover:scale-110"
+                onClick={() => navigate('/video-chat')}
+                title="영상 채팅"
+              />
               <CirclePlus
                 className="w-6 h-6 text-gray-600 cursor-pointer transition-all duration-300 hover:scale-110"
                 onClick={() => setIsModelModalOpen(true)}
@@ -134,7 +172,11 @@ const MainPage = () => {
           ) : (
             // 로그인되지 않은 상태
             <>
-              
+              <Video
+                className="w-6 h-6 text-gray-600 cursor-pointer transition-all duration-300 hover:scale-110"
+                onClick={() => navigate('/video-chat')}
+                title="영상 채팅"
+              />
               <CirclePlus
                 className="w-6 h-6 text-gray-600 cursor-pointer transition-all duration-300 hover:scale-110"
                 onClick={() => setIsModelModalOpen(true)}
@@ -153,7 +195,6 @@ const MainPage = () => {
             </>
           )}
         </div>
-        {/* ▲ 조건부 렌더 끝 */}
       </nav>
 
       <div className="flex flex-1 min-h-0 overflow-hidden">

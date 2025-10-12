@@ -197,7 +197,7 @@ const Sidebar = () => {
       </div>
 
       {/* 히스토리 리스트 */}
-      <div className="space-y-3" style={{ overflow: "visible" }}>
+      <div className="space-y-3" style={{ overflow: "visible", position: "relative" }}>
         {items.length === 0 ? (
           <div className="text-xs" style={{ color: "rgba(45, 62, 44, 0.5)" }}>
             최근 항목이 없습니다.
@@ -206,6 +206,7 @@ const Sidebar = () => {
           items.map((it) => {
             const isActive = currentCid === it.id;
             const isEditing = editingId === it.id;
+            const isMenuOpen = menuOpenId === it.id;
             
             return (
               <div
@@ -221,7 +222,8 @@ const Sidebar = () => {
                   border: `1px solid ${isActive ? "#8ba88a" : "rgba(139, 168, 138, 0.2)"}`,
                   borderRadius: "16px",
                   boxShadow: isActive ? "0 12px 40px rgba(93, 124, 91, 0.12)" : "none",
-                  overflow: "visible"
+                  overflow: "visible",
+                  zIndex: isMenuOpen ? 100 : 1
                 }}
               >
                 <div
