@@ -869,7 +869,10 @@ const ChatBox = () => {
                       <div className={`${isUser ? "aiofai-user-message" : "aiofai-bot-message"} ${isOptimal && !isUser ? "optimal-response" : ""}`}>
                         {isOptimal && !isUser ? (
                           <div>
-                            <OptimalResponseRenderer content={message.text} />
+                            <OptimalResponseRenderer 
+                              content={message.text}
+                              similarityData={message.similarityData}
+                            />
                             
                             {hasSimilarityData && (
                               <div className="mt-3 flex justify-center">

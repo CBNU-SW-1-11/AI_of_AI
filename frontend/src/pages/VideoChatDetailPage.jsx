@@ -565,6 +565,7 @@ const VideoChatDetailPage = () => {
                           content={message.content} 
                           relevantFrames={message.relevant_frames}
                           onFrameClick={handleFrameClick}
+                          similarityData={message.similarityData}
                         />
                       ) : (
                         <div>

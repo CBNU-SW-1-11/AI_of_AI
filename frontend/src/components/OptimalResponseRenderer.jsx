@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { api } from '../utils/api';
 import AIAnalysisModal from './AIAnalysisModal';
 
-const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick }) => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
+const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick, similarityData }) => {
+  const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
   const parseOptimalResponse = (text) => {
     if (!text || typeof text !== 'string') return {};
     
@@ -100,14 +100,17 @@ const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick }) => {
       
       {sections.analysis && (
         <div className="optimal-section analysis-section">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-3">
             <h3 className="section-title">각 AI 분석</h3>
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded-lg transition-colors shadow-sm"
-            >
-              📊 상세 보기
-            </button>
+            {similarityData && (
+              <button
+                onClick={() => setIsAnalysisModalOpen(true)}
+                className="px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors duration-200"
+                style={{ backgroundColor: 'rgb(139, 168, 138)' }}
+              >
+                📊 유사도 분석 보기
+              </button>
+            )}
           </div>
           <div className="analysis-grid">
             {Object.entries(analysisData).map(([aiName, analysis]) => (
@@ -115,7 +118,7 @@ const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick }) => {
                 <h4 className="analysis-ai-name">{aiName}</h4>
                 {analysis.pros.length > 0 && (
                   <div className="analysis-pros">
-                    <strong>✅ 정확한 정보:</strong>
+                    <strong>장점:</strong>
                     <ul>
                       {analysis.pros.map((pro, index) => (
                         <li key={index}>{pro}</li>
@@ -125,7 +128,7 @@ const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick }) => {
                 )}
                 {analysis.cons.length > 0 && (
                   <div className="analysis-cons">
-                    <strong>❌ 틀린 정보:</strong>
+                    <strong>단점:</strong>
                     <ul>
                       {analysis.cons.map((con, index) => (
                         <li key={index}>{con}</li>
@@ -202,14 +205,13 @@ const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick }) => {
       )}
 
       {/* AI 분석 모달 */}
-      <AIAnalysisModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        analysisData={{
-          analysisData,
-          rationale: sections.rationale
-        }}
-      />
+      {similarityData && (
+        <AIAnalysisModal
+          isOpen={isAnalysisModalOpen}
+          onClose={() => setIsAnalysisModalOpen(false)}
+          similarityData={similarityData}
+        />
+      )}
     </div>
   );
 };
