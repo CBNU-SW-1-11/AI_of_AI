@@ -761,15 +761,49 @@ const ChatBox = () => {
       `}</style>
 
       <div className="flex-shrink-0 flex chat-header w-full">
-        {selectedModels.concat("optimal").map((modelId) => (
-          <div
-            key={modelId}
-            className="px-4 py-2 text-lg font-semibold text-center border-r flex-1 whitespace-nowrap overflow-hidden text-ellipsis flex items-center justify-center"
-            style={{ color: "#2d3e2c", borderRightColor: "rgba(139, 168, 138, 0.3)" }}
-          >
-            {modelId === "optimal" ? "최적의 답변" : modelId.toUpperCase()}
-          </div>
-        ))}
+        {selectedModels.concat("optimal").map((modelId) => {
+          const getModelDisplay = (id) => {
+            if (id === "optimal") return { main: "최적의 답변", sub: null };
+            
+            // Gemini 모델
+            if (id.startsWith("gemini-")) {
+              const version = id.replace("gemini-", "");
+              return { main: "GEMINI", sub: `-${version}` };
+            }
+            // Claude 모델
+            if (id.startsWith("claude-")) {
+              const version = id.replace("claude-", "");
+              return { main: "CLAUDE", sub: `-${version}` };
+            }
+            // GPT 모델
+            if (id.startsWith("gpt-")) {
+              const version = id.replace("gpt-", "");
+              return { main: "GPT", sub: `-${version}` };
+            }
+            // Clova 모델
+            if (id.startsWith("clova-")) {
+              const version = id.replace("clova-", "");
+              return { main: "CLOVA", sub: `-${version}` };
+            }
+            
+            return { main: id.toUpperCase(), sub: null };
+          };
+          
+          const { main, sub } = getModelDisplay(modelId);
+          
+          return (
+            <div
+              key={modelId}
+              className="px-4 py-2 text-center border-r flex-1 flex items-center justify-center"
+              style={{ color: "#2d3e2c", borderRightColor: "rgba(139, 168, 138, 0.3)" }}
+            >
+              <div className="flex items-baseline gap-0">
+                <div className="text-lg font-bold">{main}</div>
+                {sub && <div className="text-xs text-gray-700">{sub}</div>}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <div
