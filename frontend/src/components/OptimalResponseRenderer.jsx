@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { api } from '../utils/api';
+import AIAnalysisModal from './AIAnalysisModal';
 
 const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const parseOptimalResponse = (text) => {
     if (!text || typeof text !== 'string') return {};
     
@@ -98,14 +100,22 @@ const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick }) => {
       
       {sections.analysis && (
         <div className="optimal-section analysis-section">
-          <h3 className="section-title">각 AI 분석</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="section-title">각 AI 분석</h3>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded-lg transition-colors shadow-sm"
+            >
+              📊 상세 보기
+            </button>
+          </div>
           <div className="analysis-grid">
             {Object.entries(analysisData).map(([aiName, analysis]) => (
               <div key={aiName} className="analysis-item">
                 <h4 className="analysis-ai-name">{aiName}</h4>
                 {analysis.pros.length > 0 && (
                   <div className="analysis-pros">
-                    <strong>장점:</strong>
+                    <strong>✅ 정확한 정보:</strong>
                     <ul>
                       {analysis.pros.map((pro, index) => (
                         <li key={index}>{pro}</li>
@@ -115,7 +125,7 @@ const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick }) => {
                 )}
                 {analysis.cons.length > 0 && (
                   <div className="analysis-cons">
-                    <strong>단점:</strong>
+                    <strong>❌ 틀린 정보:</strong>
                     <ul>
                       {analysis.cons.map((con, index) => (
                         <li key={index}>{con}</li>
@@ -190,6 +200,16 @@ const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick }) => {
           </div>
         </div>
       )}
+
+      {/* AI 분석 모달 */}
+      <AIAnalysisModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        analysisData={{
+          analysisData,
+          rationale: sections.rationale
+        }}
+      />
     </div>
   );
 };
