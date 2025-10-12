@@ -15,7 +15,7 @@ const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick }) => {
         if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
         currentSection = 'integrated';
         currentContent = [];
-      } else if (line.startsWith('## 각 AI 분석') || line.startsWith('## 📊 각 AI 분석')) {
+      } else if (line.startsWith('## 각 AI 분석') || line.startsWith('## 📊 각 AI 분석') || line.includes('**각 AI 분석**')) {
         if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
         currentSection = 'analysis';
         currentContent = [];
@@ -75,6 +75,17 @@ const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick }) => {
 
   const sections = parseOptimalResponse(content);
   const analysisData = sections.analysis ? parseAIAnalysis(sections.analysis) : {};
+  
+  // 헤더가 없는 경우 처리
+  if (!sections.integrated && content.trim()) {
+    // '---' 구분자 이전의 내용을 메인 답변으로 사용
+    const mainContent = content.split('---')[0].trim();
+    if (mainContent) {
+      sections.integrated = mainContent;
+    } else {
+      sections.integrated = content.trim();
+    }
+  }
 
   return (
     <div className="optimal-response-container">

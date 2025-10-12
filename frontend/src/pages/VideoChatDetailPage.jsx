@@ -141,7 +141,8 @@ const VideoChatDetailPage = () => {
 
     try {
       const response = await api.post(`/api/video/${selectedVideo.id}/chat/`, {
-        message: inputMessage
+        message: inputMessage,
+        session_id: null
       });
 
       if (response.data.message_type === 'special_command') {
@@ -154,6 +155,7 @@ const VideoChatDetailPage = () => {
         };
         setMessages(prev => [...prev, aiMessage]);
       } else if (response.data.ai_responses) {
+        // 순차적으로 답변 표시
         const aiMessages = [];
         
         if (response.data.ai_responses.individual) {
@@ -169,17 +171,36 @@ const VideoChatDetailPage = () => {
           });
         }
         
+        // 개별 AI 답변들을 순차적으로 표시
+        for (let i = 0; i < aiMessages.length; i++) {
+          setMessages(prev => [...prev, aiMessages[i]]);
+          // 각 답변 사이에 0.5초 대기
+          if (i < aiMessages.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        }
+        
+        // 통합 응답 표시
         if (response.data.ai_responses.optimal) {
-          aiMessages.push({
+          console.log('통합 응답 생성 중...', response.data.ai_responses.optimal);
+          await new Promise(resolve => setTimeout(resolve, 1000)); // 1초 대기
+          
+          const optimalMessage = {
             id: `optimal_${Date.now()}`,
             type: 'ai_optimal',
             content: response.data.ai_responses.optimal.content,
             created_at: response.data.ai_responses.optimal.created_at,
             relevant_frames: response.data.relevant_frames || []
+          };
+          console.log('통합 응답 메시지 추가:', optimalMessage);
+          setMessages(prev => {
+            const newMessages = [...prev, optimalMessage];
+            console.log('전체 메시지 목록:', newMessages);
+            return newMessages;
           });
+        } else {
+          console.log('통합 응답 없음:', response.data.ai_responses);
         }
-        
-        setMessages(prev => [...prev, ...aiMessages]);
       }
     } catch (error) {
       console.error('메시지 전송 실패:', error);
@@ -188,6 +209,7 @@ const VideoChatDetailPage = () => {
       setIsLoading(false);
     }
   };
+
 
   // 빠른 액션
   const handleQuickAction = async (message) => {
@@ -480,7 +502,10 @@ const VideoChatDetailPage = () => {
           <div key={modelId} className="border-r flex-1 flex flex-col chat-column">
             <div className="flex-shrink-0 px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
               <div className="text-center text-sm font-medium text-gray-600 flex-1">
-                {modelId === 'optimal' ? '통합 응답' : modelId.toUpperCase()}
+                {modelId === 'optimal' ? '통합 응답' : 
+                 modelId === 'gpt' ? 'GPT' :
+                 modelId === 'claude' ? 'CLAUDE' :
+                 modelId === 'mixtral' ? 'GEMINI' : modelId.toUpperCase()}
               </div>
               <button
                 onClick={() => scrollToBottomForModel(modelId)}
@@ -497,7 +522,24 @@ const VideoChatDetailPage = () => {
               {messages.map((message, index) => {
                 const isUser = message.type === 'user';
                 const isOptimal = modelId === 'optimal' && message.type === 'ai_optimal';
-                const isModelMessage = modelId !== 'optimal' && message.ai_model === modelId;
+                
+                // 디버깅 로그
+                if (modelId === 'optimal') {
+                  console.log(`통합 응답 탭 - 메시지 ${index}:`, {
+                    messageType: message.type,
+                    isOptimal,
+                    messageId: message.id,
+                    content: message.content?.substring(0, 50) + '...'
+                  });
+                }
+                // 모델 ID 매핑
+                const getModelKey = (aiModel) => {
+                  if (aiModel?.includes('gpt')) return 'gpt';
+                  if (aiModel?.includes('claude')) return 'claude';
+                  if (aiModel?.includes('gemini')) return 'mixtral'; // Gemini를 Mixtral 탭에 표시
+                  return aiModel;
+                };
+                const isModelMessage = modelId !== 'optimal' && getModelKey(message.ai_model) === modelId;
                 const isSpecialCommand = message.type === 'ai_optimal' && message.id && message.id.startsWith('special_');
                 
                 if (isSpecialCommand) {
@@ -640,7 +682,8 @@ const VideoChatDetailPage = () => {
         <div className="flex space-x-3 mb-3">
           <button
             onClick={() => handleQuickAction('영상 요약해줘')}
-            className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-sm rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg flex items-center"
+            className="px-4 py-2 text-white text-sm rounded-lg hover:opacity-90 transition-all duration-200 shadow-sm hover:shadow-md flex items-center font-medium"
+            style={{ backgroundColor: 'rgb(139, 168, 138)' }}
           >
             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -649,67 +692,14 @@ const VideoChatDetailPage = () => {
           </button>
           <button
             onClick={() => handleQuickAction('영상 하이라이트 알려줘')}
-            className="px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-600 text-white text-sm rounded-lg hover:from-purple-600 hover:to-purple-700 transition-all duration-200 shadow-md hover:shadow-lg flex items-center"
+            className="px-4 py-2 text-white text-sm rounded-lg hover:opacity-90 transition-all duration-200 shadow-sm hover:shadow-md flex items-center font-medium"
+            style={{ backgroundColor: 'rgb(139, 168, 138)' }}
           >
             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
             하이라이트
           </button>
-          <button
-            onClick={() => handleQuickAction('간단한 요약')}
-            className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white text-sm rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-200 shadow-md hover:shadow-lg flex items-center"
-          >
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            간단 요약
-          </button>
-        <button
-          onClick={() => handleQuickAction('상세한 요약')}
-          className="px-4 py-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white text-sm rounded-lg hover:from-orange-600 hover:to-orange-700 transition-all duration-200 shadow-md hover:shadow-lg flex items-center"
-        >
-          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-          </svg>
-          상세 요약
-        </button>
-        <button
-          onClick={() => handleQuickAction('사람 찾아줘')}
-          className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white text-sm rounded-lg hover:from-red-600 hover:to-red-700 transition-all duration-200 shadow-md hover:shadow-lg flex items-center"
-        >
-          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          사람 찾기
-        </button>
-        <button
-          onClick={() => handleQuickAction('비가오는 밤 영상 찾아줘')}
-          className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-indigo-600 text-white text-sm rounded-lg hover:from-indigo-600 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg flex items-center"
-        >
-          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
-          </svg>
-          비오는 밤
-        </button>
-        <button
-          onClick={() => handleQuickAction('주황색 상의 남성 찾아줘')}
-          className="px-4 py-2 bg-gradient-to-r from-yellow-500 to-yellow-600 text-white text-sm rounded-lg hover:from-yellow-600 hover:to-yellow-700 transition-all duration-200 shadow-md hover:shadow-lg flex items-center"
-        >
-          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
-          주황 옷 남성
-        </button>
-        <button
-          onClick={() => handleQuickAction('3:00-5:00 성비 분포 알려줘')}
-          className="px-4 py-2 bg-gradient-to-r from-pink-500 to-pink-600 text-white text-sm rounded-lg hover:from-pink-600 hover:to-pink-700 transition-all duration-200 shadow-md hover:shadow-lg flex items-center"
-        >
-          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-          </svg>
-          성비 분석
-        </button>
         </div>
       </div>
 

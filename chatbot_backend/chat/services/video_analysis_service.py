@@ -38,22 +38,19 @@ except ImportError:
     BLIP_AVAILABLE = False
     print("⚠️ BLIP 미설치 - 캡션 생성 기능 제한")
 
-# OpenAI GPT-4V (조건부 사용)
+# Ollama Vision import (llava 모델 - 캡션 생성)
 try:
-    import openai
-    GPT4V_AVAILABLE = bool(os.getenv('OPENAI_API_KEY'))
-    if GPT4V_AVAILABLE:
-        print("✅ GPT-4V 사용 가능")
-    else:
-        print("ℹ️ GPT-4V API 키 없음 - DeepFace만 사용")
+    import ollama
+    OLLAMA_AVAILABLE = True
+    print("✅ Ollama 로드 성공")
 except ImportError:
-    GPT4V_AVAILABLE = False
-    print("⚠️ OpenAI 미설치")
+    OLLAMA_AVAILABLE = False
+    print("⚠️ Ollama 미설치 - BLIP만 사용")
 
 logger = logging.getLogger(__name__)
 
 class VideoAnalysisService:
-    """하이브리드 영상 분석 서비스 (YOLO + DeepFace + GPT-4V + BLIP)"""
+    """하이브리드 영상 분석 서비스 (YOLO + DeepFace + Ollama + BLIP)"""
     
     def __init__(self):
         self.analysis_modules_available = True
@@ -68,7 +65,7 @@ class VideoAnalysisService:
                 logger.warning(f"⚠️ YOLO 모델 초기화 실패: {e}")
                 self.yolo_model = None
         
-        # BLIP 모델 초기화 (캡션 생성)
+        # BLIP 모델 초기화 (캡션 생성 - 백업용)
         self.blip_processor = None
         self.blip_model = None
         if BLIP_AVAILABLE:
@@ -79,8 +76,8 @@ class VideoAnalysisService:
             except Exception as e:
                 logger.warning(f"⚠️ BLIP 모델 초기화 실패: {e}")
         
-        # GPT-4V 사용 여부
-        self.use_gpt4v = GPT4V_AVAILABLE
+        # Ollama 사용 여부 (캡션 생성 - 1순위)
+        self.use_ollama = OLLAMA_AVAILABLE
         
         # DeepFace 사용 여부
         self.use_deepface = DEEPFACE_AVAILABLE
@@ -89,7 +86,7 @@ class VideoAnalysisService:
         self.stats = {
             'deepface_success': 0,
             'deepface_fail': 0,
-            'gpt4v_calls': 0,
+            'ollama_calls': 0,
             'blip_calls': 0,
             'total_cost': 0.0
         }
@@ -97,8 +94,8 @@ class VideoAnalysisService:
         logger.info("✅ 하이브리드 영상 분석 서비스 초기화 완료")
         logger.info(f"   - YOLO: {YOLO_AVAILABLE}")
         logger.info(f"   - DeepFace: {DEEPFACE_AVAILABLE}")
+        logger.info(f"   - Ollama: {OLLAMA_AVAILABLE}")
         logger.info(f"   - BLIP: {BLIP_AVAILABLE}")
-        logger.info(f"   - GPT-4V: {GPT4V_AVAILABLE}")
     
     def sync_video_status_with_files(self, video_id):
         """데이터베이스 상태와 실제 파일 상태를 동기화"""
@@ -690,9 +687,9 @@ JSON만 답변해주세요."""
                 logger.info("📊 하이브리드 분석 통계")
                 logger.info(f"  • DeepFace 성공: {self.stats['deepface_success']}회")
                 logger.info(f"  • DeepFace 실패: {self.stats['deepface_fail']}회")
-                logger.info(f"  • GPT-4V 호출: {self.stats['gpt4v_calls']}회")
+                logger.info(f"  • Ollama 캡션: {self.stats['ollama_calls']}회")
                 logger.info(f"  • BLIP 캡션: {self.stats['blip_calls']}회")
-                logger.info(f"  • 총 비용: ${self.stats['total_cost']:.3f}")
+                logger.info(f"  • 총 비용: ${self.stats['total_cost']:.3f} (무료)")
                 logger.info(f"  • DeepFace 성공률: {self.stats['deepface_success']/(self.stats['deepface_success']+self.stats['deepface_fail'])*100:.1f}%" if (self.stats['deepface_success']+self.stats['deepface_fail']) > 0 else "  • DeepFace 성공률: N/A")
                 logger.info("="*60)
                     
@@ -887,23 +884,29 @@ JSON만 답변해주세요."""
             self._update_progress(video_id, 10, "영상 정보 추출 완료")
             time.sleep(0.5)
             
-            # ✨ 하이브리드 프레임 샘플링 개선 (1초당 1프레임)
+            # ✨ 하이브리드 프레임 샘플링 (10분 영상 최적화 - 처리 시간 고려)
             sample_frames = []
             frame_indices = []
             
-            # 영상 길이에 따라 적응적 샘플링
+            # 영상 길이에 따라 적응적 샘플링 (최대 10분, Ollama 캡션 생성 시간 고려)
             if duration <= 10:
-                # 10초 이하: 0.5초당 1프레임
+                # 10초 이하: 0.5초당 1프레임 (~20프레임, 0.7분)
                 sample_interval = max(1, int(fps * 0.5))
             elif duration <= 30:
-                # 30초 이하: 1초당 1프레임
+                # 30초 이하: 1초당 1프레임 (~30프레임, 1분)
                 sample_interval = max(1, int(fps))
-            elif duration <= 120:
-                # 2분 이하: 2초당 1프레임
+            elif duration <= 60:
+                # 1분 이하: 2초당 1프레임 (~30프레임, 1분)
                 sample_interval = max(1, int(fps * 2))
-            else:
-                # 2분 초과: 3초당 1프레임
+            elif duration <= 120:
+                # 2분 이하: 3초당 1프레임 (~40프레임, 1.3분)
                 sample_interval = max(1, int(fps * 3))
+            elif duration <= 300:
+                # 5분 이하: 4초당 1프레임 (~75프레임, 2.5분)
+                sample_interval = max(1, int(fps * 4))
+            else:
+                # 10분 이하: 6초당 1프레임 (~100프레임, 3.3분)
+                sample_interval = max(1, int(fps * 6))
             
             # 프레임 인덱스 생성
             frame_indices = list(range(0, frame_count, sample_interval))
@@ -912,10 +915,10 @@ JSON만 답변해주세요."""
             if frame_indices[-1] != frame_count - 1:
                 frame_indices.append(frame_count - 1)
             
-            # 최대 50개로 제한 (너무 많으면 처리 시간 증가)
-            if len(frame_indices) > 50:
-                step = len(frame_indices) // 50
-                frame_indices = frame_indices[::step][:50]
+            # 최대 100개로 제한 (Ollama 캡션 생성 시간 최적화: 약 3.3분)
+            if len(frame_indices) > 100:
+                step = len(frame_indices) // 100
+                frame_indices = frame_indices[::step][:100]
             
             # 최소 5개 보장
             if len(frame_indices) < 5:
@@ -1679,7 +1682,7 @@ JSON만 답변해주세요."""
             return "장면 분석 중 오류 발생"
     
     def _generate_ai_caption(self, frame_data):
-        """Vision-Language 모델을 사용한 캡션 생성 (BLIP/GPT-4V)"""
+        """Vision-Language 모델을 사용한 캡션 생성 (Ollama → BLIP)"""
         try:
             # 프레임 이미지 경로 확인
             frame_image_path = frame_data.get('frame_image_path')
@@ -1693,12 +1696,12 @@ JSON만 답변해주세요."""
                 logger.warning(f"프레임 이미지 파일이 존재하지 않음: {full_image_path}")
                 return None
             
-            # GPT-4 Vision 사용
-            caption = self._generate_gpt4v_caption(full_image_path, frame_data)
+            # 1순위: Ollama Vision 사용 (llava 모델)
+            caption = self._generate_ollama_caption(full_image_path, frame_data)
             if caption:
                 return caption
             
-            # BLIP 모델 사용 (로컬)
+            # 2순위: BLIP 모델 사용 (로컬)
             caption = self._generate_blip_caption(full_image_path)
             if caption:
                 return caption
@@ -1710,73 +1713,68 @@ JSON만 답변해주세요."""
             logger.error(f"❌ Vision 캡션 생성 실패: {e}")
             return None
     
-    def _generate_gpt4v_caption(self, image_path, frame_data):
-        """GPT-4 Vision을 사용한 캡션 생성"""
+    def _generate_ollama_caption(self, image_path, frame_data):
+        """Ollama Vision 모델을 사용한 캡션 생성 (llava)"""
         try:
-            import openai
-            import base64
-            import os
-            
-            # OpenAI API 키 확인
-            if not os.getenv('OPENAI_API_KEY'):
-                logger.warning("OpenAI API 키가 없어서 GPT-4V 캡션 생성 불가")
-                return None
-            
-            # 이미지를 base64로 인코딩
-            with open(image_path, "rb") as image_file:
-                base64_image = base64.b64encode(image_file.read()).decode('utf-8')
-            
-            client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+            import ollama
             
             # 프레임 정보 추가
             timestamp = frame_data.get('timestamp', 0)
             persons = frame_data.get('persons', [])
             objects = frame_data.get('objects', [])
+            dominant_colors = frame_data.get('dominant_colors', [])
             
-            prompt = f"""
-이 영상 프레임을 분석하여 한국어로 상세한 캡션을 생성해주세요.
-
-프레임 정보:
-- 시간: {timestamp:.1f}초
-- 감지된 사람: {len(persons)}명
-- 감지된 객체: {len(objects)}개
-
-캡션 요구사항:
-- 장면의 주요 내용을 자연스럽게 설명
-- 인물, 객체, 배경, 활동 등을 포함
-- 감정이나 분위기도 표현
-- 50자 이내로 간결하게
-- 한국어로 작성
-
-캡션만 답변해주세요 (설명 없이):
-"""
+            # 색상 정보 텍스트 생성
+            color_text = ""
+            if dominant_colors:
+                colors = [f"{c['color']}" for c in dominant_colors[:3]]
+                color_text = f"주요 색상: {', '.join(colors)}"
             
-            response = client.chat.completions.create(
-                model="gpt-4o",
+            prompt = f"""Write EXACTLY 2-3 sentences describing this frame. IMPORTANT: Include specific gender and age information for each person visible.
+
+Frame: {timestamp:.1f}s, {len(persons)} person(s)
+
+Requirements:
+- Describe each person's gender (man/woman/boy/girl) and approximate age (young/adult/elderly)
+- Include clothing colors and actions
+- Mention objects, setting, and atmosphere
+- Be concise and specific
+
+Example: "A bustling city sidewalk with 5 people walking. An elderly woman in a white jacket talks on her phone while a young man in green clothing and two adult women in blue and yellow jackets carry handbags. A teenage boy strolls past storefronts. Daytime with natural lighting, lively urban atmosphere."
+
+Caption:"""
+            
+            # Ollama로 이미지 분석
+            response = ollama.chat(
+                model='llava:7b',  # 이미지/PDF 채팅에서 사용하는 동일 모델
                 messages=[
                     {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{base64_image}"
-                                }
-                            }
-                        ]
+                        'role': 'user',
+                        'content': prompt,
+                        'images': [image_path]  # 이미지 경로 직접 전달
                     }
                 ],
-                max_tokens=150,
-                temperature=0.7
+                options={
+                    'temperature': 0.7,
+                    'num_predict': 150,  # 간결한 캡션 (약 100-150 단어)
+                    'num_ctx': 2048
+                }
             )
             
-            caption = response.choices[0].message.content.strip()
-            logger.info(f"✅ GPT-4V 캡션 생성 성공: {caption}")
+            caption = response['message']['content'].strip()
+            
+            # 너무 긴 캡션은 자르기 (300자로 증가)
+            if len(caption) > 300:
+                caption = caption[:300] + "..."
+            
+            # 통계 업데이트
+            self.stats['ollama_calls'] += 1
+            
+            logger.info(f"✅ Ollama 캡션 생성 성공: {caption}")
             return caption
             
         except Exception as e:
-            logger.error(f"❌ GPT-4V 캡션 생성 실패: {e}")
+            logger.warning(f"⚠️ Ollama 캡션 생성 실패: {e}")
             return None
     
     def _generate_blip_caption(self, image_path):

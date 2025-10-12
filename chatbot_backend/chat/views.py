@@ -9,6 +9,7 @@ from django.http import HttpResponse, Http404
 from chat.serializers import UserSerializer, VideoChatSessionSerializer, VideoChatMessageSerializer, VideoAnalysisCacheSerializer
 from chat.models import VideoChatSession, VideoChatMessage, VideoAnalysisCache, Video
 from .services.video_analysis_service import video_analysis_service
+from .enhanced_video_chat_handler import get_video_chat_handler
 from .person_search_handler import handle_person_search_command
 from .advanced_search_view import InterVideoSearchView, IntraVideoSearchView, TemporalAnalysisView
 from .advanced_command_handler import handle_inter_video_search_command, handle_intra_video_search_command, handle_temporal_analysis_command
@@ -892,8 +893,8 @@ class ChatView(APIView):
 
             # optimal 모델인 경우 특별 처리
             if bot_name == 'optimal':
-                # 사용자 선택 심판 모델 (기본값: GPT-3.5-turbo)
-                judge_model = request.data.get('judge_model', 'GPT-3.5-turbo')
+                # 사용자 선택 심판 모델 (기본값: GPT-4o-mini - 더 저렴하고 성능 우수)
+                judge_model = request.data.get('judge_model', 'GPT-4o-mini')
                 
                 # 사용자가 선택한 LLM 모델들 (프론트엔드에서 전달)
                 selected_models = request.data.get('selected_models', None)
@@ -1129,31 +1130,26 @@ def detect_conflicts_in_responses(llm_responses):
     return detected_conflicts
 
 def quick_web_verify(conflict_type, conflict_values, question):
-    """개선된 웹 검증 (Wikipedia + Google Search)"""
+    """개선된 웹 검증 (Wikipedia + Google Search) - 범용적"""
     import requests
     import time
     import re
     
     try:
-        # 질문에서 핵심 키워드 추출
-        keywords = []
-        for value in conflict_values.keys():
-            keywords.append(value)
+        print(f"🌐 웹 검증 시작: '{question}'")
         
-        print(f"🔍 웹 검증 시작: {conflict_type} - {keywords}")
-        
-        # 1차: Wikipedia API 검색
+        # 1차: Wikipedia API 검색 (질문 기반)
         print("🔍 Wikipedia 검색 시도...")
-        wiki_result = search_wikipedia(question, keywords)
+        wiki_result = search_wikipedia(question, [])
         if wiki_result.get("verified"):
-            print(f"✅ Wikipedia 검증 성공: {wiki_result['extracted_year']}")
+            print(f"✅ Wikipedia 검증 성공")
             return wiki_result
         
         # 2차: Google Search (간단한 방법)
         print("🔍 Google 검색 시도...")
-        google_result = search_google_simple(question, keywords)
+        google_result = search_google_simple(question, [])
         if google_result.get("verified"):
-            print(f"✅ Google 검증 성공: {google_result['extracted_year']}")
+            print(f"✅ Google 검증 성공")
             return google_result
         
         # 모든 검색이 실패한 경우
@@ -1201,58 +1197,52 @@ def search_wikipedia(question, keywords):
         return {"verified": False, "error": f"Wikipedia 오류: {e}"}
 
 def extract_search_terms_from_question(question):
-    """질문에서 검색 키워드 자동 추출"""
+    """질문에서 검색 키워드 자동 추출 (범용적)"""
     import re
     
-    # 핵심 명사 패턴
     keywords = []
     
-    # 1. 대학교/학교 패턴
-    university_patterns = [
-        r'([가-힣]+대학교)',
-        r'([가-힣]+대)',
-        r'([A-Za-z\s]+University)',
-        r'([A-Za-z\s]+College)'
+    # 1. 일반적인 명사 패턴 (하드코딩 없이)
+    # 한국어 명사 패턴 (2글자 이상)
+    korean_nouns = re.findall(r'[가-힣]{2,}', question)
+    keywords.extend(korean_nouns)
+    
+    # 영어 대문자로 시작하는 단어들 (고유명사)
+    english_proper_nouns = re.findall(r'[A-Z][a-z]+(?:\s[A-Z][a-z]+)*', question)
+    keywords.extend(english_proper_nouns)
+    
+    # 숫자와 함께 나오는 단어들 (연도, 수치 등)
+    number_words = re.findall(r'\d{4}년?|\d+명?|\d+개?', question)
+    keywords.extend(number_words)
+    
+    # 특수 패턴들 (범용적)
+    special_patterns = [
+        r'([가-힣]+대학교?)',  # 대학교
+        r'([가-힣]+대학?)',    # 대학
+        r'([가-힣]+회사?)',    # 회사
+        r'([가-힣]+정부?)',    # 정부
+        r'([가-힣]+사건?)',    # 사건
+        r'([가-힣]+전쟁?)',    # 전쟁
+        r'([가-힣]+혁명?)',    # 혁명
+        r'([가-힣]+올림픽?)',  # 올림픽
     ]
     
-    for pattern in university_patterns:
-        matches = re.findall(pattern, question)
-        keywords.extend(matches)
-    
-    # 2. 회사명 패턴
-    company_patterns = [
-        r'(애플|Apple)',
-        r'(구글|Google)',
-        r'(삼성|Samsung)',
-        r'(마이크로소프트|Microsoft)',
-        r'([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)'
-    ]
-    
-    for pattern in company_patterns:
-        matches = re.findall(pattern, question)
-        keywords.extend(matches)
-    
-    # 3. 역사적 사건/기관 패턴
-    event_patterns = [
-        r'(임시정부)',
-        r'(올림픽)',
-        r'(코로나19|COVID-19)',
-        r'(ChatGPT)',
-        r'([가-힣]{2,}정부)',
-        r'([가-힣]{2,}사건)'
-    ]
-    
-    for pattern in event_patterns:
+    for pattern in special_patterns:
         matches = re.findall(pattern, question)
         keywords.extend(matches)
     
     # 중복 제거 및 정리
     unique_keywords = []
     for kw in keywords:
-        if kw and kw not in unique_keywords and len(kw) > 1:
-            unique_keywords.append(kw.strip())
+        if kw and kw not in unique_keywords and len(kw.strip()) > 1:
+            # 너무 일반적인 단어들 제외
+            common_words = ['설명', '대해', '알려', '줘', '해줘', '어떤', '무엇', '언제', '어디', '왜', '어떻게']
+            if kw.strip() not in common_words:
+                unique_keywords.append(kw.strip())
     
-    return unique_keywords
+    # 상위 3개 키워드만 반환 (너무 많으면 검색이 비효율적)
+    print(f"🔍 추출된 키워드: {unique_keywords[:3]}")
+    return unique_keywords[:3]
 
 def search_wikipedia_api(search_term, lang='ko'):
     """Wikipedia API 실제 검색"""
@@ -1301,28 +1291,55 @@ def search_wikipedia_api(search_term, lang='ko'):
             if extract and len(extract) > 20:
                 print(f"✅ Wikipedia 요약: {extract[:100]}...")
                 
-                # 연도 패턴 추출 (한글 텍스트에서도 작동하도록)
+                # 모든 정보 추출 (연도, 위치, 기타 정보)
+                extracted_info = {
+                    "verified": True,
+                    "source": f"Wikipedia ({lang})",
+                    "abstract": extract[:400] + "..." if len(extract) > 400 else extract,
+                    "full_text": extract,  # 전체 텍스트 저장
+                    "confidence": 0.95,
+                    "page_title": page_title
+                }
+                
+                # 연도 패턴 추출 (설립, 창립, 개교 등)
                 years = re.findall(r'(\d{4})', extract)
                 valid_years = [year for year in years if 1900 <= int(year) <= 2024]
                 
                 if valid_years:
-                    # 가장 자주 언급된 연도 선택
                     year_counts = Counter(valid_years)
                     most_common_year = year_counts.most_common(1)[0][0]
-                    
-                    return {
-                        "verified": True,
-                        "source": f"Wikipedia ({lang})",
-                        "extracted_year": most_common_year,
-                        "abstract": extract[:200] + "..." if len(extract) > 200 else extract,
-                        "confidence": 0.9,
-                        "page_title": page_title
-                    }
+                    extracted_info["extracted_year"] = most_common_year
+                    print(f"📅 추출된 연도: {most_common_year}년")
                 
-                # 요약에 연도가 없으면 본문 일부 가져오기 시도
-                print("⚠️ 요약에 연도 없음, 본문 검색 시도...")
-                full_text_result = get_wikipedia_full_text(page_title, lang, headers)
-                return full_text_result  # 본문 검색 결과를 반환 (성공/실패 모두)
+                # 위치 정보 추출 (시, 도, 구 등)
+                location_patterns = [
+                    r'([가-힣]+특별시|[가-힣]+광역시|[가-힣]+시)\s+([가-힣]+구|[가-힣]+군)',
+                    r'([가-힣]+특별시|[가-힣]+광역시|[가-힣]+시)',
+                    r'([가-힣]+도)\s+([가-힣]+시)',
+                ]
+                
+                for pattern in location_patterns:
+                    location_matches = re.findall(pattern, extract)
+                    if location_matches:
+                        if isinstance(location_matches[0], tuple):
+                            location = ' '.join(location_matches[0])
+                        else:
+                            location = location_matches[0]
+                        extracted_info["location"] = location
+                        print(f"📍 추출된 위치: {location}")
+                        break
+                
+                # 국립/사립/공립 정보 추출
+                if '국립' in extract:
+                    extracted_info["type"] = "국립"
+                    print(f"🏛️ 유형: 국립")
+                elif '사립' in extract:
+                    extracted_info["type"] = "사립"
+                    print(f"🏛️ 유형: 사립")
+                
+                return extracted_info
+                
+                # 요약에 정보가 없으면 본문 검색 시도 (제거 - 요약만으로도 충분)
         
         return {"verified": False, "error": "내용 추출 실패"}
         
@@ -1389,40 +1406,128 @@ def search_google_simple(question, keywords):
     # 현재는 Wikipedia에만 의존
     return {"verified": False, "error": "Wikipedia 외 검색 미구현"}
 
-def judge_and_generate_optimal_response(llm_responses, user_question, judge_model="gpt-3.5-turbo"):
-    """하이브리드 검증 시스템: LLM 비교 + 선택적 웹 검증"""
+def classify_question_type(question):
+    """질문 유형 자동 분류: 사실(Factual) vs 의견(Opinion)"""
+    try:
+        import openai
+        import os
+        
+        client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        
+        classification_prompt = f"""
+다음 질문이 "사실적 질문"인지 "의견/추천 질문"인지 분류하세요.
+
+질문: "{question}"
+
+분류 기준:
+- 사실적 질문: 객관적 사실, 정확한 답이 존재 (예: 설립연도, 위치, 역사적 사실)
+- 의견/추천 질문: 주관적 평가, 추천, 선호도 (예: 맛집 추천, 좋은 카페, 최고의 제품)
+
+JSON 형식으로만 응답:
+{{
+  "type": "factual" 또는 "opinion",
+  "confidence": 0.0-1.0,
+  "reason": "분류 이유"
+}}
+"""
+        
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "당신은 질문 유형 분류 전문가입니다. JSON 형식으로만 응답하세요."},
+                {"role": "user", "content": classification_prompt}
+            ],
+            temperature=0.0,
+            response_format={"type": "json_object"}
+        )
+        
+        result = json.loads(response.choices[0].message.content)
+        print(f"📝 질문 유형: {result['type']} (신뢰도: {result['confidence']})")
+        print(f"   이유: {result['reason']}")
+        
+        return result['type']
+        
+    except Exception as e:
+        print(f"⚠️ 질문 분류 실패: {e}, 기본값 'factual' 사용")
+        return "factual"
+
+def judge_and_generate_optimal_response(llm_responses, user_question, judge_model="gpt-4o-mini"):
+    """하이브리드 검증 시스템: LLM 비교 + 선택적 웹 검증 + 다수결"""
     try:
         print(f"🔍 하이브리드 검증 시작: {user_question}")
+        
+        # 0단계: 질문 유형 분류
+        question_type = classify_question_type(user_question)
         
         # 1단계: 상호모순 감지
         conflicts = detect_conflicts_in_responses(llm_responses)
         print(f"📊 감지된 상호모순: {conflicts}")
+        print(f"🔍 상호모순 카테고리 수: {len(conflicts)}")
+        for category, items in conflicts.items():
+            print(f"  - {category}: {items}")
         
-        # 2단계: 웹 검증 (항상 실행)
+        # 2단계: 의견 질문 - Tie-breaker 확인
+        if question_type == "opinion" and len(llm_responses) == 2:
+            print("🗳️ 의견 질문 + 2개 모델 → Tie-breaker 호출")
+            # Tie-breaker 로직은 나중에 구현
+            pass
+        
+        # 3단계: 웹 검증 (사실 질문만) 또는 다수결 (의견 질문)
         verified_facts = {}
         web_verification_used = False
         
-        print("🌐 Wikipedia 웹 검증 시작...")
-        web_result = quick_web_verify("dates", {}, user_question)
+        if question_type == "factual":
+            print(f"🌐 Wikipedia 웹 검증 시작... 질문: '{user_question}'")
+            
+            # 범용적 웹 검증 - 사실 질문에만 적용
+            web_result = quick_web_verify("general", {}, user_question)
+        else:
+            print(f"🗳️ 의견 질문 → Wikipedia 검증 생략, 다수결 방식 사용")
+            web_result = {"verified": False}
+        
         if web_result.get("verified"):
-            verified_facts["dates"] = web_result
+            # 검증된 정보를 적절한 카테고리에 저장
+            if web_result.get('extracted_year'):
+                verified_facts["dates"] = web_result
+            if web_result.get('location'):
+                if "locations" not in verified_facts:
+                    verified_facts["locations"] = web_result
+                else:
+                    verified_facts["locations"].update(web_result)
+            if not verified_facts:  # 아무것도 저장되지 않은 경우
+                verified_facts["general_facts"] = web_result
+                
             web_verification_used = True
-            print(f"✅ 웹 검증 성공: 설립연도 {web_result.get('extracted_year')}년")
+            
+            # 검증 결과 로그 출력
+            info_parts = []
+            if web_result.get('extracted_year'):
+                info_parts.append(f"연도 {web_result.get('extracted_year')}년")
+            if web_result.get('location'):
+                info_parts.append(f"위치 {web_result.get('location')}")
+            if web_result.get('type'):
+                info_parts.append(f"유형 {web_result.get('type')}")
+            
+            print(f"✅ 웹 검증 성공: {', '.join(info_parts)}")
         else:
             print(f"⚠️ 웹 검증 실패: {web_result.get('error')}")
+        
+        # 상호모순 기반 검증 (웹 검증 성공/실패와 독립적으로 실행)
+        if conflicts:
+            print("⚡ 상호모순 발견! 상호모순 기반 검증 시작...")
+            print(f"🔍 처리할 상호모순: {conflicts}")
             
-            # 웹 검증 실패 시 상호모순 기반 검증
-            if conflicts:
-                print("⚡ 상호모순 발견! 상호모순 기반 검증 시작...")
-                
-                for conflict_type, conflict_values in conflicts.items():
-                    if conflict_type in ["dates"]:  # 연도만 검증 (위치는 제외)
-                        # 상호모순 정보만 기록
-                        verified_facts[conflict_type] = {
-                            "verified": False,
-                            "conflict_detected": True,
-                            "conflict_values": list(conflict_values.keys())
-                        }
+            for conflict_type, conflict_values in conflicts.items():
+                # 모든 유형의 상호모순을 범용적으로 처리
+                verified_facts[conflict_type] = {
+                    "verified": False,
+                    "conflict_detected": True,
+                    "conflict_values": list(conflict_values.keys()),
+                    "conflict_details": dict(conflict_values)  # {값: [AI목록]}
+                }
+                print(f"✅ 상호모순 처리됨: {conflict_type} -> {verified_facts[conflict_type]}")
+        else:
+            print("ℹ️ 상호모순 없음")
         
         # 3단계: 심판 프롬프트 구성 (웹 검증 결과 포함)
         model_sections = []
@@ -1430,52 +1535,248 @@ def judge_and_generate_optimal_response(llm_responses, user_question, judge_mode
         
         for model_name, response in llm_responses.items():
             model_sections.append(f"[{model_name} 답변]\n{response}")
-            verification_json_entries.append(f'    "{model_name}": {{"accuracy": "정확성_판정", "errors": "구체적_오류_설명", "confidence": "신뢰도_0-100"}}')
+            verification_json_entries.append(f'    "{model_name}": {{"accuracy": "정확성_판정", "errors": "구체적_오류_설명", "confidence": "신뢰도_0-100", "adopted_info": ["채택된_정보들"], "rejected_info": ["제외된_정보들과_이유"]}}')
         
         model_responses_text = "\n\n".join(model_sections)
         verification_json_format = ",\n".join(verification_json_entries)
         
-        # 웹 검증 결과를 프롬프트에 추가
+        # 웹 검증 결과를 프롬프트에 추가 (범용적)
         web_verification_text = ""
-        if web_verification_used and verified_facts.get("dates", {}).get("verified"):
-            verification = verified_facts["dates"]
-            web_verification_text = f"""
+        if web_verification_used:
+            # 모든 검증된 사실에 대해 범용적으로 처리
+            verified_info_parts = []
+            
+            for fact_type, verification in verified_facts.items():
+                if verification.get('verified'):
+                    if verification.get('extracted_year'):
+                        verified_info_parts.append(f"- **✅ 공식 연도**: {verification['extracted_year']}년")
+                    if verification.get('location'):
+                        verified_info_parts.append(f"- **✅ 공식 위치**: {verification['location']}")
+                    if verification.get('type'):
+                        verified_info_parts.append(f"- **✅ 공식 유형**: {verification['type']}")
+                    if verification.get('abstract') and not any([verification.get('extracted_year'), verification.get('location'), verification.get('type')]):
+                        # 기타 검증된 정보
+                        verified_info_parts.append(f"- **✅ 검증된 정보**: {verification['abstract'][:100]}...")
+            
+            if verified_info_parts:
+                verified_info_text = '\n'.join(verified_info_parts)
+                # 첫 번째 검증 결과의 신뢰도 사용
+                first_verification = next(iter(verified_facts.values()))
+                
+                web_verification_text = f"""
 
-**🌐 Wikipedia 웹 검증 결과 (신뢰도 {verification.get('confidence', 0.9)*100:.0f}%):**
-- **✅ 공식 설립연도**: {verification['extracted_year']}년
-- **출처**: {verification.get('source', 'Wikipedia')}
-- **페이지**: {verification.get('page_title', '확인됨')}
-- **검증 내용**: {verification.get('abstract', '')[:150]}...
+**🌐 Wikipedia 웹 검증 결과 (신뢰도 {first_verification.get('confidence', 0.9)*100:.0f}%):**
+{verified_info_text}
+- **출처**: {first_verification.get('source', 'Wikipedia')}
+- **페이지**: {first_verification.get('page_title', '확인됨')}
+- **검증 내용**: {first_verification.get('abstract', '')[:200]}...
 
 ⚠️ **중요**: 위 정보는 Wikipedia에서 검증된 공식 정보입니다. 
-LLM 응답에 다른 연도가 있다면 그것은 오류입니다. 반드시 위 검증된 연도를 사용하세요.
+LLM 응답이 위 정보와 다르면 그것은 **명백한 오류**입니다.
+- 연도가 다르면 → "연도 오류 (X년이라고 했지만 Wikipedia에 따르면 Y년)"
+- 위치가 다르면 → "위치 정보 오류 (X라고 했지만 Wikipedia에 따르면 Y)"
+- 정보가 Wikipedia와 일치하면 → 정확한 정보로 표시하세요!
 """
-        elif verified_facts.get("dates", {}).get("conflict_detected"):
-            conflict_values = verified_facts["dates"].get("conflict_values", [])
+        # 상호모순이 감지된 경우 (웹 검증 실패 시)
+        elif any(fact.get("conflict_detected") for fact in verified_facts.values()):
+            # 모든 상호모순 유형에 대해 범용적으로 처리
+            conflict_summaries = []
+            conflict_ai_details = []
+            
+            for conflict_type, conflict_data in verified_facts.items():
+                if conflict_data.get("conflict_detected"):
+                    conflict_values = conflict_data.get("conflict_values", [])
+                    conflict_details = conflict_data.get("conflict_details", {})
+                    
+                    # 유형별 한국어 라벨 매핑
+                    type_labels = {
+                        "dates": "날짜/연도",
+                        "locations": "위치",
+                        "numbers": "수치",
+                        "general_facts": "일반 사실"
+                    }
+                    type_label = type_labels.get(conflict_type, conflict_type)
+                    
+                    conflict_summaries.append(f"- **{type_label} 불일치**: {', '.join(conflict_values)}")
+                    
+                    # 각 AI별 상호모순 상세 정보 생성
+                    for value, ai_list in conflict_details.items():
+                        ai_names = ', '.join(ai_list)
+                        conflict_ai_details.append(f"- {value} ({type_label}): {ai_names}")
+            
+            conflict_summary_text = '\n'.join(conflict_summaries)
+            conflict_ai_text = '\n'.join(conflict_ai_details)
+            
             web_verification_text = f"""
 
 **⚠️ 상호모순 감지됨 (웹 검증 실패):**
-- **설립연도 불일치**: {', '.join(conflict_values)}년 - 정확한 연도 확인 불가
-- **조치**: 확신할 수 없는 연도는 최적 답변에서 생략하세요
+{conflict_summary_text}
+- **조치**: 확신할 수 없는 정보는 최적 답변에서 생략하세요
+
+**🚨 각 AI별 상호모순 상세:**
+{conflict_ai_text}
+
+**🚨 각 AI별 오류 처리 규칙 (필수 준수):**
+- 위에서 상호모순에 참여한 모든 AI는 반드시 "틀린 정보"에 "정보 불확실 (다른 AI와 상충)"을 기록하세요
+- 상호모순이 있는 정보는 절대 "틀린 정보 없음"으로 표시하면 안됩니다
+- 예시: GPT-4o Mini가 1946년이라고 했고, Gemini가 1951년이라고 했다면 → 둘 다 "틀린 정보"에 "설립연도 불확실 (다른 AI와 상충)"을 기록
+"""
+        
+        # 상호모순 정보가 있으면 더 강력한 지시사항 추가
+        contradiction_warning = ""
+        has_conflicts = any(fact.get("conflict_detected") for fact in verified_facts.values())
+        print(f"🔍 상호모순 경고 생성 여부: {has_conflicts}")
+        print(f"🔍 verified_facts: {verified_facts}")
+        
+        if has_conflicts:
+            contradiction_warning = f"""
+
+**🚨 상호모순 감지됨 - 필수 처리 규칙:**
+{web_verification_text}
+
+**⚠️ 절대 금지사항:**
+- 상호모순에 참여한 AI에게 "틀린 정보 없음"이라고 하면 안됩니다
+- 상호모순에 참여한 AI에게 "정확한 정보 제공"이라고 하면 안됩니다
+- 반드시 "틀린 정보"에 구체적인 상호모순 내용을 기록하세요
+
+**✅ 올바른 예시:**
+- GPT-4o Mini: "틀린 정보: 설립연도 불확실 (다른 AI와 상충)"
+- Gemini 2.0 Flash Lite: "틀린 정보: 설립연도 불확실 (다른 AI와 상충)"
+- Claude 3.5 Haiku: "틀린 정보: 설립연도 불확실 (다른 AI와 상충)"
+"""
+
+        # 질문 유형에 따른 지시사항
+        if question_type == "opinion":
+            question_type_instruction = """
+**📊 이 질문은 의견/추천 질문입니다:**
+- Wikipedia 검증 대신 **다수결 방식**을 사용하세요
+- 여러 AI가 공통적으로 추천하는 항목에 높은 가중치를 부여하세요
+- 각 AI의 추천 이유를 종합하여 최적의 답변을 생성하세요
+- 소수 의견도 포함하되, 다수 의견을 우선적으로 배치하세요
+"""
+        else:
+            question_type_instruction = """
+**📋 이 질문은 사실 질문입니다:**
+- Wikipedia 검증 결과를 우선적으로 사용하세요
+- 객관적 사실에 기반하여 답변을 생성하세요
 """
         
         judge_prompt = f"""
 질문: {user_question}
+{question_type_instruction}
 
 {model_responses_text}
 {web_verification_text}
+{contradiction_warning}
 
-**지시사항:**
-1. 위 LLM 답변들을 분석하여 **공통적이고 정확한 정보**를 추출하세요
-2. Wikipedia 검증 결과가 있으면 그 연도를 반드시 사용하세요
-3. 각 LLM의 좋은 정보들(위치, 단과대학, 특징 등)을 **조합**하여 풍부한 답변을 생성하세요
-4. 상호모순이 있는 정보는 제외하고, **검증된 정보만** 포함하세요
+**🚨 절대 준수 사항 (매우 중요!):**
+1. **반드시 위에 제공된 LLM 답변들의 내용만 사용하세요**
+2. **절대 새로운 정보를 추가하거나 만들어내지 마세요**
+3. **LLM이 언급하지 않은 맛집, 카페, 장소, 정보는 절대 포함하지 마세요**
+4. **할루시네이션 금지!** - 위 답변에 없는 내용은 절대 작성 금지
+5. **위에 제공된 LLM 답변의 개수를 확인하세요** - 1개만 있으면 "다른 AI"라는 표현을 사용하지 마세요
+6. **최적 답변의 모든 문장은 위 LLM 답변에서 직접 추출한 것이어야 합니다**
 
-**최적 답변 생성 예시:**
-"검증된 정보를 바탕으로 정확하고 상세한 답변을 작성하세요. 
-여러 LLM의 답변에서 공통적으로 확인된 사실들을 중심으로 구성하고,
-Wikipedia 등 신뢰할 수 있는 출처에서 검증된 정보를 우선적으로 포함하세요.
-상호 모순되는 정보는 제외하고, 일관성 있는 답변을 제공하세요."
+**🎯 최적 답변 생성 방식 (절대 준수!):**
+
+**당신의 역할: 편집자, 작가가 아님!**
+- ❌ 새로운 문장을 작성하지 마세요
+- ❌ 요약하지 마세요
+- ❌ 재구성하지 마세요
+- ✅ **오직 위 LLM 답변에서 문장을 복사-붙여넣기만** 하세요
+
+**작업 방법 (단계별):**
+1. **복사**: 위 각 LLM 답변에서 정확한 문장을 복사
+2. **검증**: Wikipedia 검증 정보와 일치하는지 확인
+3. **필터링**: 상호모순이 있는 문장은 제외
+4. **붙여넣기**: 선택한 문장들을 순서대로 붙여넣기
+5. **완료**: 단어 하나도 수정하지 말고 그대로 제출
+
+**절대 금지:**
+- "여러 AI가 추천한 곳 중..." ← 새로 작성한 문장!
+- "다양한 맛집들이..." ← LLM 답변에 없는 표현!
+- "종합하면..." ← 요약 금지!
+
+**허용:**
+- LLM1의 문장 1 + LLM2의 문장 3 + LLM1의 문장 5 ← 복사-붙여넣기!
+
+**중요: "errors", "adopted_info", "rejected_info" 필드 작성 규칙 (필수 준수!)**
+
+**1. "errors" 필드:**
+- **1순위**: 상호모순이 있는 정보는 반드시 "틀린 정보"로 분류
+- **2순위**: "errors"는 **명백히 틀린 사실**만 작성 (예: 잘못된 연도, 잘못된 위치)
+- 개선 제안, 더 상세히 할 수 있다는 의견, 주관적인 평가는 errors가 아님
+- 상호모순이 있으면 절대 "틀린 정보 없음"이라고 하지 마세요
+- 예시: "설립연도 불확실 (다른 AI와 상충)", "위치 정보 불확실 (다른 AI와 상충)"
+
+**2. "adopted_info" 필드 (반드시 작성!):**
+- 해당 AI의 답변에서 최적 답변에 **실제로 사용된 정보**를 구체적으로 나열
+- 각 항목은 **하나의 완전하고 독립적인 문장**으로 작성
+- **절대 문장을 쪼개지 마세요!** 하나의 정보는 하나의 항목으로!
+- 빈 배열로 두지 마세요! 최소 1개 이상 작성
+- **배열 작성 규칙:**
+  1. 각 항목은 최소 10단어 이상의 완전한 문장
+  2. 하나의 정보는 반드시 하나의 배열 항목
+  3. 숫자, 이름, 문장을 절대 분리 금지
+  
+- **올바른 형식:**
+  ```json
+  "adopted_info": [
+    "청주시에 위치한 국립대학교라는 정보를 제공했습니다",
+    "1951년에 설립되었으며 오랜 역사를 가지고 있다는 정보를 제공했습니다",
+    "인문대학, 사회과학대학, 자연과학대학, 공학대학, 의학대학 등 다양한 분야의 학과를 운영한다는 정보를 제공했습니다",
+    "약 20000명의 학생과 1000여명의 교수진이 있다는 정보를 제공했습니다"
+  ]
+  ```
+
+- **절대 금지 형식:**
+  ```json
+  "adopted_info": [
+    "약 20",
+    "000명",  ← 숫자 분리 금지!
+    "학생 수",
+    "교수진: 1",
+    "000명"  ← 숫자 분리 금지!
+  ]
+  ```
+
+**3. "rejected_info" 필드 (반드시 작성!):**
+- 해당 AI의 답변에서 **제외된 정보와 이유**를 명확히 기술
+- 각 항목은 **"정보 내용 (제외 이유)"** 형식으로 작성
+- 아무것도 제외하지 않았으면 빈 배열로 두세요
+- ✅ 올바른 예시:
+  - ["1946년 설립 정보 (다른 AI와 상충)"]
+  - ["15개 단과대학 정보 (다른 AI는 14개라고 함)"]
+  - ["약 3만명 학생 수 (검증 불가능)"]
+- ❌ 잘못된 예시:
+  - ["청주시 위치 정보"]  ← 이유가 없음
+  - ["위치", "단과대학"]  ← 너무 간략함
+
+**⚠️ 중요: 모든 AI에 대해 adopted_info와 rejected_info를 반드시 작성하세요!**
+- 최적 답변은 각 AI의 정보를 조합한 것이므로, 각 AI가 기여한 부분을 명확히 표시해야 합니다
+- 아무것도 채택하지 않았다면 그 이유를 rejected_info에 작성하세요
+
+**최적 답변 생성 및 분석 근거 작성 규칙:**
+1. 검증된 정보를 바탕으로 정확하고 상세한 답변을 작성하세요
+2. 여러 LLM의 답변에서 공통적으로 확인된 사실들을 중심으로 구성하세요
+3. Wikipedia 등 신뢰할 수 있는 출처에서 검증된 정보를 우선적으로 포함하세요
+4. 상호 모순되는 정보는 제외하고, 일관성 있는 답변을 제공하세요
+
+**⚠️ "analysis_rationale" 필드 (매우 중요!):**
+사용자가 최적 답변을 신뢰할 수 있도록 **구체적이고 투명한 근거**를 제공하세요.
+
+**작성 규칙:**
+1. **실제로 제공된 LLM 답변의 개수를 명시**하세요 (예: "GPT-4o 1개 모델만 참여", "GPT-4o, Gemini, Claude 3개 모델 참여")
+2. **각 AI가 실제로 말한 내용만** 언급하세요
+3. **할루시네이션 금지** - 위 답변에 없는 AI 모델 이름이나 정보를 언급하지 마세요
+4. **공통 정보**: 여러 AI가 동의한 정보는 무엇인지 (2개 이상일 때만)
+5. **검증 결과**: Wikipedia 등에서 검증된 사실은 무엇인지 (있는 경우만)
+6. **상호모순 처리**: 상충하는 정보가 있었다면 어떻게 처리했는지
+7. **최종 선택 근거**: 왜 이 정보들을 최적 답변에 포함했는지
+
+**작성 원칙:**
+- 1개 모델만 참여 시: 해당 모델 이름과 채택한 정보 명시
+- 여러 모델 참여 시: 공통 정보와 각 모델별 기여 내용 명시
 
 반드시 아래 JSON 형식으로만 응답하세요:
 
@@ -1490,7 +1791,8 @@ Wikipedia 등 신뢰할 수 있는 출처에서 검증된 정보를 우선적으
     "dates": ["검증된 연도 정보들"],
     "locations": ["검증된 위치 정보들"],
     "facts": ["검증된 기타 사실들"]
-  }}
+  }},
+  "analysis_rationale": "최적 답변 생성 근거 - 각 AI의 답변에서 어떤 정보를 채택했는지, 어떤 정보가 틀렸거나 상반되어서 제외했는지, Wikipedia 검증 결과를 어떻게 반영했는지 상세히 설명"
 }}
 
 """
@@ -1539,7 +1841,7 @@ Wikipedia 등 신뢰할 수 있는 출처에서 검증된 정보를 우선적으
 def call_judge_model(model_name, prompt):
     """심판 모델 호출"""
     try:
-        if model_name in ['GPT-3.5-turbo', 'GPT-4', 'GPT-4o']:
+        if model_name in ['GPT-3.5-turbo', 'GPT-4', 'GPT-4o', 'GPT-4o-mini']:
             # OpenAI 모델 사용
             import openai
             openai_api_key = os.getenv('OPENAI_API_KEY')
@@ -1554,17 +1856,37 @@ def call_judge_model(model_name, prompt):
                 openai_model_name = 'gpt-4'
             elif model_name == 'GPT-4o':
                 openai_model_name = 'gpt-4o'
+            elif model_name == 'GPT-4o-mini':
+                openai_model_name = 'gpt-4o-mini'
             elif model_name == 'GPT-3.5-turbo':
                 openai_model_name = 'gpt-3.5-turbo'
             
             response = client.chat.completions.create(
                 model=openai_model_name,
                 messages=[
-                    {"role": "system", "content": "당신은 사실 검증 전문가입니다. 정확한 정보만 제공하고 틀린 정보를 명확히 지적하세요."},
+                    {"role": "system", "content": """당신은 텍스트 선택 전문가입니다. 새로운 문장을 작성하지 마세요.
+
+🚨 절대 규칙:
+1. 사용자가 제공한 LLM 답변에서 문장을 **그대로 복사**만 하세요
+2. 절대 새로운 맛집 이름, 장소 이름, 정보를 만들지 마세요
+3. LLM 답변에 없는 단어 하나도 추가하지 마세요
+4. 요약, 재구성, 재작성 절대 금지
+5. 오직 **복사 + 붙여넣기**만 허용
+
+✅ 올바른 방식:
+- LLM이 "왕십리순대는 순대국이 유명합니다"라고 했으면
+- 당신도 "왕십리순대는 순대국이 유명합니다"라고 그대로 사용
+
+❌ 잘못된 방식:
+- LLM이 "왕십리순대"라고 했는데
+- 당신이 "호미곶"이라고 바꿈 ← 절대 금지!
+
+JSON 형식으로만 응답하세요."""},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=1500,
-                temperature=0.1
+                max_tokens=2500,  # 토큰 수 더 증가
+                temperature=0.0,   # 더 일관된 출력을 위해 0으로 설정
+                response_format={"type": "json_object"}  # JSON 형식 강제
             )
             
             return response.choices[0].message.content.strip()
@@ -1637,16 +1959,42 @@ def parse_judge_response(judge_response, judge_model, llm_responses=None):
                 "상태": "성공",
                 "신뢰도": parsed_data.get("confidence_score", "50"),
                 "상호모순": parsed_data.get("contradictions_detected", []),
-                "사실검증": parsed_data.get("fact_verification", {})
+                "사실검증": parsed_data.get("fact_verification", {}),
+                "분석_근거": parsed_data.get("analysis_rationale", "")
             }
             
-            # 검증 결과 파싱
+            # 검증 결과 파싱 (상호모순 우선 처리)
             verification_results = parsed_data.get("verification_results", {})
+            contradictions = parsed_data.get("contradictions_detected", [])
+            
             for model_name, verification in verification_results.items():
+                errors_text = verification.get("errors", "오류 없음")
+                
+                # 상호모순이 감지된 경우 강제로 오류 처리
+                has_contradiction = any(
+                    model_name.lower() in str(contradiction).lower() or 
+                    "상충" in errors_text or 
+                    "불확실" in errors_text or
+                    "다른 AI" in errors_text
+                    for contradiction in contradictions
+                )
+                
+                # 기본 정확성 판단
+                is_accurate_by_default = (
+                    verification.get("accuracy") == "정확" or
+                    errors_text.lower() in ["없음", "오류 없음", "정확한 정보 제공", "정확한 정보"] or
+                    "정확한 정보" in errors_text
+                )
+                
+                # 상호모순이 있으면 무조건 오류로 처리
+                is_accurate = is_accurate_by_default and not has_contradiction
+                
                 result["llm_검증_결과"][model_name] = {
-                    "정확성": "✅" if verification.get("accuracy") == "정확" else "❌",
-                    "오류": verification.get("errors", "오류 없음"),
-                    "신뢰도": verification.get("confidence", "50")
+                    "정확성": "✅" if is_accurate else "❌",
+                    "오류": errors_text if not is_accurate else "정확한 정보 제공",
+                    "신뢰도": verification.get("confidence", "50"),
+                    "채택된_정보": verification.get("adopted_info", []),
+                    "제외된_정보": verification.get("rejected_info", [])
                 }
             
             return result
@@ -1688,12 +2036,15 @@ def format_optimal_response(final_result):
     try:
         optimal_answer = final_result.get("최적의_답변", "")
         verification_results = final_result.get("llm_검증_결과", {})
-        judge_model = final_result.get("심판모델", "gpt-3.5-turbo")
+        judge_model = final_result.get("심판모델", "gpt-4o-mini")
         status = final_result.get("상태", "성공")
         
         # 새로운 JSON 형식 지원
         confidence = final_result.get("신뢰도", "50")
         contradictions = final_result.get("상호모순", [])
+        
+        # 분석 근거 추출
+        analysis_rationale = final_result.get("분석_근거", "")
         
         # 메인 답변 구성
         formatted_response = f"""**최적의 답변:**
@@ -1701,7 +2052,17 @@ def format_optimal_response(final_result):
 {optimal_answer}
 
 *({judge_model} 검증 완료 - 신뢰도: {confidence}%)*
+"""
+        
+        # 분석 근거 추가 (있는 경우)
+        if analysis_rationale:
+            formatted_response += f"""
+**📊 답변 생성 근거:**
 
+{analysis_rationale}
+"""
+        
+        formatted_response += """
 **각 LLM 검증 결과:**
 """
         
@@ -1741,6 +2102,8 @@ def format_optimal_response(final_result):
                 accuracy = verification.get("정확성", "✅")
                 error = verification.get("오류", "오류 없음")
                 model_confidence = verification.get("신뢰도", "50")
+                adopted = verification.get("채택된_정보", [])
+                rejected = verification.get("제외된_정보", [])
                 
                 formatted_response += f"""
 **{model_display_name}:**
@@ -1748,13 +2111,24 @@ def format_optimal_response(final_result):
 ❌ 오류: {error}
 📊 신뢰도: {model_confidence}%
 """
+                
+                # 채택된 정보 추가 (각 항목을 개별 라인으로)
+                if adopted and len(adopted) > 0:
+                    for item in adopted:
+                        formatted_response += f"✅ 채택된 정보: {item}\n"
+                
+                # 제외된 정보 추가 (각 항목을 개별 라인으로)
+                if rejected and len(rejected) > 0:
+                    for item in rejected:
+                        formatted_response += f"❌ 제외된 정보: {item}\n"
         
-        # 상호모순 정보 추가
+        # 상호모순 정보 추가 (각 AI 분석 외부에 표시)
         if contradictions:
+            contradiction_text = chr(10).join(f"- {contradiction}" for contradiction in contradictions)
             formatted_response += f"""
 
 **⚠️ 발견된 상호모순:**
-{chr(10).join(f"- {contradiction}" for contradiction in contradictions)}
+{contradiction_text}
 """
         
         # 상태 정보 추가
@@ -2553,8 +2927,121 @@ class VideoChatView(APIView):
                 content=message
             )
             
-            # 특별 명령어 시스템 제거 - 모든 메시지를 일반 채팅으로 처리
-            print(f"🔍 일반 채팅 메시지 처리: '{message}'")
+            # 🎯 개선된 핸들러 사용
+            print(f"🔍 개선된 영상 채팅 핸들러 사용: '{message}'")
+            handler = get_video_chat_handler(video_id, video)
+            chat_result = handler.process_message(message)
+            
+            # AI 개별 응답 저장
+            individual_messages = []
+            if chat_result.get('individual_responses'):
+                for ai_name, ai_content in chat_result['individual_responses'].items():
+                    ai_message = VideoChatMessage.objects.create(
+                        session=session,
+                        message_type='ai',
+                        content=ai_content,
+                        ai_model=ai_name,
+                        parent_message=user_message
+                    )
+                    individual_messages.append(ai_message)
+            
+            # 통합 응답 저장
+            optimal_response = chat_result.get('answer', '')
+            optimal_message = None
+            if optimal_response:
+                optimal_message = VideoChatMessage.objects.create(
+                    session=session,
+                    message_type='ai_optimal',
+                    content=optimal_response,
+                    ai_model='optimal',
+                    parent_message=user_message
+                )
+            
+            # 프레임 정보 구성
+            relevant_frames = []
+            if chat_result.get('frames'):
+                # 메타 DB에서 전체 프레임 정보 가져오기
+                meta_db_path = f"/Users/seon/AIOFAI_F/AI_of_AI/chatbot_backend/media/upload_1758464088_upload_1758158306_upload_1758153730_upload_1758152157_test2.mp4-meta_db.json"
+                all_frames = []
+                try:
+                    with open(meta_db_path, 'r', encoding='utf-8') as f:
+                        meta_data = json.load(f)
+                        all_frames = meta_data.get('frame', [])
+                except:
+                    pass
+                
+                for idx, frame in enumerate(chat_result['frames']):
+                    # 실제 프레임 인덱스 찾기 (timestamp로 매칭)
+                    actual_frame_index = -1
+                    for i, meta_frame in enumerate(all_frames):
+                        if abs(meta_frame.get('timestamp', 0) - frame.get('timestamp', 0)) < 0.1:
+                            actual_frame_index = i
+                            break
+                    
+                    # 이미지 파일 경로 생성 (실제 프레임 인덱스 + 1)
+                    if actual_frame_index >= 0:
+                        frame_image_path = f"images/video{video_id}_frame{actual_frame_index + 1}.jpg"
+                    else:
+                        frame_image_path = f"images/video{video_id}_frame{idx + 1}.jpg"
+                    
+                    frame_info = {
+                        'image_id': frame.get('image_id', idx + 1),
+                        'timestamp': frame.get('timestamp', 0),
+                        'image_url': f"/media/{frame_image_path}",  # /media/ 경로 추가
+                        'caption': frame.get('caption', ''),
+                        'relevance_score': frame.get('match_score', 1.0),  # match_score를 relevance_score로 변환
+                        'persons': frame.get('objects', [])[:3],  # 최대 3명만
+                        'objects': [],
+                        'scene_attributes': {
+                            'scene_type': 'unknown',
+                            'lighting': 'unknown',
+                            'activity_level': 'unknown'
+                        }
+                    }
+                    relevant_frames.append(frame_info)
+            
+            # 응답 데이터 구성 (프론트엔드 형식에 맞춤)
+            response_data = {
+                'session_id': str(session.id),
+                'user_message': {
+                    'id': str(user_message.id),
+                    'content': message,
+                    'created_at': user_message.created_at.isoformat()
+                },
+                'ai_responses': {
+                    'individual': [
+                        {
+                            'id': str(msg.id),
+                            'model': msg.ai_model,
+                            'content': msg.content,
+                            'created_at': msg.created_at.isoformat()
+                        } for msg in individual_messages
+                    ],
+                    'optimal': {
+                        'id': str(optimal_message.id) if optimal_message else None,
+                        'model': 'optimal',
+                        'content': optimal_response,
+                        'created_at': optimal_message.created_at.isoformat() if optimal_message else None
+                    } if optimal_response else None
+                },
+                'relevant_frames': relevant_frames,
+                'is_video_related': chat_result.get('is_video_related', True)
+            }
+            
+            print(f"✅ 응답 생성 완료:")
+            print(f"   - 개별 AI: {len(individual_messages)}개")
+            print(f"   - 통합 응답: {'있음' if optimal_response else '없음'}")
+            print(f"   - 관련 프레임: {len(relevant_frames)}개")
+            
+            return Response(response_data)
+            
+        except Exception as e:
+            import traceback
+            print(f"❌ 오류 발생: {e}")
+            print(f"❌ 상세: {traceback.format_exc()}")
+            return Response({
+                'error': f'채팅 처리 중 오류 발생: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
             # 영상 분석 데이터 가져오기 (Video 모델에서 직접)
             analysis_data = {
