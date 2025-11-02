@@ -53,33 +53,33 @@ class FactualVerificationSystem:
     """정확한 사실 검증 시스템"""
     
     def __init__(self):
-        # 검증 모델 설정 (사용자 선택 가능)
+        # 검증 모델 설정 (사용자 선택 가능 - 3개 모델)
         self.verification_models = {
-            'GPT-3.5-turbo': {
-                'name': 'GPT-3.5 Turbo',
+            'GPT-4o-mini': {
+                'name': 'GPT-4o Mini',
                 'cost': '저렴',
                 'speed': '빠름',
                 'quality': '높음',
                 'default': True
             },
-            'Claude-3.5-haiku': {
-                'name': 'Claude-3.5 Haiku',
+            'Gemini-2.0-Flash-Lite': {
+                'name': 'Gemini 2.0 Flash Lite',
+                'cost': '매우 저렴',
+                'speed': '매우 빠름',
+                'quality': '높음',
+                'default': False
+            },
+            'Claude-3.5-Haiku': {
+                'name': 'Claude 3.5 Haiku',
                 'cost': '저렴',
                 'speed': '빠름',
                 'quality': '높음',
                 'default': False
-            },
-            'LLaMA 3.1 8B': {
-                'name': 'LLaMA 3.1 8B',
-                'cost': '무료',
-                'speed': '빠름',
-                'quality': '중간',
-                'default': False
             }
         }
         
-        # 현재 선택된 검증 모델 (기본값: GPT-3.5-turbo)
-        self.current_verification_model = 'GPT-3.5-turbo'
+        # 현재 선택된 검증 모델 (기본값: GPT-4o-mini - 가장 안정적)
+        self.current_verification_model = 'GPT-4o-mini'
         
         # 신뢰할 수 있는 소스들 (범용)
         self.trusted_sources = {
@@ -1473,7 +1473,7 @@ class FactualVerificationSystem:
         
         return max(0, min(100, confidence))
     
-    def _get_conflict_warnings(self, ai_name: str, response: str, conflicts: Dict[str, List[str]]) -> List[str]:
+    def _get_conflict_warnings(self, ai_name: str, response: str, conflicts: Dict[str, List[str]], query: str = "") -> List[str]:
         """특정 AI의 충돌 경고 생성"""
         warnings = []
         
@@ -1534,7 +1534,7 @@ class FactualVerificationSystem:
             
             client = openai.OpenAI(api_key=openai_api_key)
             response = client.chat.completions.create(
-                model=model_name,
+                model="gpt-3.5-turbo",  # 기본 모델 지정
                 messages=[
                     {"role": "system", "content": "당신은 사실 검증 전문가입니다. 정확한 정보만 제공하세요."},
                     {"role": "user", "content": verification_prompt}
@@ -1963,7 +1963,8 @@ class FactualVerificationSystem:
     def _apply_corrections(
         self, 
         response: str, 
-        analysis: AccuracyAnalysis
+        analysis: AccuracyAnalysis,
+        responses: Dict[str, str] = None
     ) -> str:
         """응답에 수정사항 적용하여 통합 답변 생성"""
         try:
@@ -1972,7 +1973,7 @@ class FactualVerificationSystem:
             if responses:
                 return list(responses.values())[0]
             else:
-                return "정보를 찾을 수 없습니다."
+                return response if response else "정보를 찾을 수 없습니다."
             
         except Exception as e:
             logger.warning(f"수정사항 적용 실패: {e}")

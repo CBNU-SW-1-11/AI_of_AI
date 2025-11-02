@@ -29,14 +29,16 @@ const AIAnalysisModal = ({ isOpen, onClose, analysisData }) => {
         <div className="space-y-6">
           {/* 분석 근거 섹션 - 강조 표시 */}
           {rationale && (
-            <div className="border-2 border-blue-300 rounded-lg p-6 bg-blue-50 shadow-sm">
-              <h3 className="text-xl font-bold text-blue-800 mb-4 flex items-center">
-                <TrendingUp className="mr-2 text-blue-600" size={22} />
+            <div className="border-2 border-blue-400 rounded-lg p-6 bg-blue-50 shadow-lg">
+              <h3 className="text-xl font-bold text-blue-900 mb-4 flex items-center">
+                <TrendingUp className="mr-3 text-blue-600" size={24} />
                 📊 최적 답변 생성 근거
               </h3>
-              <p className="text-gray-800 leading-relaxed whitespace-pre-line text-base">
-                {rationale}
-              </p>
+              <div className="bg-white rounded-lg p-4 border border-blue-200 shadow-sm">
+                <p className="text-gray-800 leading-relaxed whitespace-pre-line text-base font-medium">
+                  {rationale}
+                </p>
+              </div>
             </div>
           )}
           

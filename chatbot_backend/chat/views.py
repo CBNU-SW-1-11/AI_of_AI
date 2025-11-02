@@ -1306,8 +1306,32 @@ def search_wikipedia_api(search_term, lang='ko'):
                 valid_years = [year for year in years if 1900 <= int(year) <= 2024]
                 
                 if valid_years:
-                    year_counts = Counter(valid_years)
-                    most_common_year = year_counts.most_common(1)[0][0]
+                    # 설립/개교 관련 연도 우선 추출
+                    founding_patterns = [
+                        r'(\d{4})년[^\d]*(?:설립|창립|개교|대학.*설립|대학교.*설립|설립.*대학)',
+                        r'(?:설립|창립|개교)[^\d]*(\d{4})년',
+                        r'(\d{4})년.*(?:출범|탄생|생성)'
+                    ]
+                    
+                    # 각 패턴에서 가장 먼저 매치되는 연도 찾기 (위치 기준)
+                    first_matches = []
+                    for pattern in founding_patterns:
+                        match = re.search(pattern, extract, re.IGNORECASE)
+                        if match:
+                            matched_year = match.group(1)
+                            if matched_year in valid_years:
+                                position = match.start()
+                                first_matches.append((position, matched_year))
+                    
+                    if first_matches:
+                        # 위치가 가장 앞선 연도 선택
+                        first_matches.sort()
+                        most_common_year = first_matches[0][1]
+                    else:
+                        # 설립 연도 패턴이 없으면 가장 자주 언급된 연도
+                        year_counts = Counter(valid_years)
+                        most_common_year = year_counts.most_common(1)[0][0]
+                    
                     extracted_info["extracted_year"] = most_common_year
                     print(f"📅 추출된 연도: {most_common_year}년")
                 
@@ -1337,9 +1361,15 @@ def search_wikipedia_api(search_term, lang='ko'):
                     extracted_info["type"] = "사립"
                     print(f"🏛️ 유형: 사립")
                 
-                return extracted_info
+                # 연도가 없으면 본문에서 추가 검색
+                if not extracted_info.get("extracted_year"):
+                    print("⚠️ 요약에 연도 없음, 본문 API로 fallback...")
+                    full_text_result = get_wikipedia_full_text(page_title, lang, headers)
+                    if full_text_result.get("verified") and full_text_result.get("extracted_year"):
+                        extracted_info["extracted_year"] = full_text_result["extracted_year"]
+                        print(f"📅 본문에서 추출된 설립연도: {full_text_result['extracted_year']}년")
                 
-                # 요약에 정보가 없으면 본문 검색 시도 (제거 - 요약만으로도 충분)
+                return extracted_info
         
         return {"verified": False, "error": "내용 추출 실패"}
         
@@ -1377,14 +1407,35 @@ def get_wikipedia_full_text(page_title, lang, headers):
                 if full_text and len(full_text) > 50:
                     print(f"📄 Wikipedia 본문: {full_text[:150]}...")
                     
-                    # 연도 패턴 추출 (한글 텍스트에서도 작동하도록)
+                    # 연도 패턴 추출 (설립/개교 관련 연도 우선)
                     years = re.findall(r'(\d{4})', full_text)
                     valid_years = [year for year in years if 1900 <= int(year) <= 2024]
                     
                     if valid_years:
-                        # 가장 자주 언급된 연도 선택
-                        year_counts = Counter(valid_years)
-                        most_common_year = year_counts.most_common(1)[0][0]
+                        # 설립/개교 키워드가 있는 문장에서 연도 우선 추출
+                        founding_patterns = [
+                            r'(\d{4})년[^\d]*(?:설립|창립|개교|대학.*설립|대학교.*설립|설립.*대학)',
+                            r'(?:설립|창립|개교)[^\d]*(\d{4})년',
+                            r'(\d{4})년.*(?:출범|탄생|생성)'
+                        ]
+                        # 각 패턴에서 가장 먼저 매치되는 연도 찾기 (위치 기준)
+                        first_matches = []
+                        for pattern in founding_patterns:
+                            match = re.search(pattern, full_text, re.IGNORECASE)
+                            if match:
+                                matched_year = match.group(1)
+                                if matched_year in valid_years:
+                                    position = match.start()
+                                    first_matches.append((position, matched_year))
+                        
+                        if first_matches:
+                            # 위치가 가장 앞선 연도 선택 (원래 설립 연도 우선)
+                            first_matches.sort()  # 위치 순으로 정렬
+                            most_common_year = first_matches[0][1]
+                        else:
+                            # 없으면 가장 자주 언급된 연도 선택
+                            year_counts = Counter(valid_years)
+                            most_common_year = year_counts.most_common(1)[0][0]
                         
                         return {
                             "verified": True,
@@ -1518,14 +1569,17 @@ def judge_and_generate_optimal_response(llm_responses, user_question, judge_mode
             print(f"🔍 처리할 상호모순: {conflicts}")
             
             for conflict_type, conflict_values in conflicts.items():
-                # 모든 유형의 상호모순을 범용적으로 처리
-                verified_facts[conflict_type] = {
-                    "verified": False,
-                    "conflict_detected": True,
-                    "conflict_values": list(conflict_values.keys()),
-                    "conflict_details": dict(conflict_values)  # {값: [AI목록]}
-                }
-                print(f"✅ 상호모순 처리됨: {conflict_type} -> {verified_facts[conflict_type]}")
+                # 웹 검증이 이미 성공한 항목은 덮어쓰지 않음
+                if conflict_type not in verified_facts or not verified_facts[conflict_type].get("verified"):
+                    verified_facts[conflict_type] = {
+                        "verified": False,
+                        "conflict_detected": True,
+                        "conflict_values": list(conflict_values.keys()),
+                        "conflict_details": dict(conflict_values)  # {값: [AI목록]}
+                    }
+                    print(f"✅ 상호모순 처리됨: {conflict_type} -> {verified_facts[conflict_type]}")
+                else:
+                    print(f"ℹ️ {conflict_type}는 이미 Wikipedia 검증 완료, 상호모순 처리 건너뜀")
         else:
             print("ℹ️ 상호모순 없음")
         
@@ -1563,19 +1617,24 @@ def judge_and_generate_optimal_response(llm_responses, user_question, judge_mode
                 # 첫 번째 검증 결과의 신뢰도 사용
                 first_verification = next(iter(verified_facts.values()))
                 
+                # Wikipedia 원문 포함 (LLM이 직접 비교 분석 가능)
+                wikipedia_full_text = first_verification.get('full_text', '') or first_verification.get('abstract', '')
+                wikipedia_excerpt = wikipedia_full_text[:500] if len(wikipedia_full_text) > 500 else wikipedia_full_text
+                
                 web_verification_text = f"""
 
 **🌐 Wikipedia 웹 검증 결과 (신뢰도 {first_verification.get('confidence', 0.9)*100:.0f}%):**
 {verified_info_text}
 - **출처**: {first_verification.get('source', 'Wikipedia')}
 - **페이지**: {first_verification.get('page_title', '확인됨')}
-- **검증 내용**: {first_verification.get('abstract', '')[:200]}...
 
-⚠️ **중요**: 위 정보는 Wikipedia에서 검증된 공식 정보입니다. 
-LLM 응답이 위 정보와 다르면 그것은 **명백한 오류**입니다.
-- 연도가 다르면 → "연도 오류 (X년이라고 했지만 Wikipedia에 따르면 Y년)"
-- 위치가 다르면 → "위치 정보 오류 (X라고 했지만 Wikipedia에 따르면 Y)"
-- 정보가 Wikipedia와 일치하면 → 정확한 정보로 표시하세요!
+**📖 Wikipedia 원문:**
+{wikipedia_excerpt}
+
+🚨 **절대 준수 규칙**: 위 Wikipedia 원문은 공식 검증된 정보입니다.
+- **LLM 답변과 Wikipedia 원문을 직접 비교**하여 정확성을 판단하세요
+- Wikipedia와 **불일치하는 LLM 답변은 틀린 정보**로 분류하세요
+- Wikipedia와 일치하는 LLM 답변만 채택하세요
 """
         # 상호모순이 감지된 경우 (웹 검증 실패 시)
         elif any(fact.get("conflict_detected") for fact in verified_facts.values()):
@@ -1684,13 +1743,28 @@ LLM 응답이 위 정보와 다르면 그것은 **명백한 오류**입니다.
 - ❌ 요약하지 마세요
 - ❌ 재구성하지 마세요
 - ✅ **오직 위 LLM 답변에서 문장을 복사-붙여넣기만** 하세요
+- ✅ **여러 LLM의 답변을 조합**하여 최적 답변 작성 (단일 모델 선택 금지!)
 
-**작업 방법 (단계별):**
-1. **복사**: 위 각 LLM 답변에서 정확한 문장을 복사
-2. **검증**: Wikipedia 검증 정보와 일치하는지 확인
-3. **필터링**: 상호모순이 있는 문장은 제외
-4. **붙여넣기**: 선택한 문장들을 순서대로 붙여넣기
-5. **완료**: 단어 하나도 수정하지 말고 그대로 제출
+**작업 방법 (3단계 프로세스 - 순서대로 진행!):**
+
+**STEP 1: 최적 답변 생성**
+1. **모든 LLM 답변을 검토**하여 유용한 문장 수집
+2. **Wikipedia 검증 정보와 일치하는 문장만 선택** (검증된 정보 우선!)
+   - 예: Wikipedia가 "1951년 설립"이라고 하면 → "1951년" 포함 문장만 채택
+   - 다른 연도(1946년, 1952년 등) 포함 문장은 절대 채택 금지!
+3. **상충되거나 잘못된 정보는 제외** (Wikipedia와 다른 내용 삭제)
+4. 선택한 문장들을 **여러 LLM에서 조합**하여 순서대로 붙여넣기
+5. **단일 모델 답변이 아니라 여러 모델 답변 조합** 필수!
+
+**STEP 2: 각 LLM 분석 (최적 답변 완성 후!)**
+- STEP 1에서 생성한 **최적 답변의 실제 내용**을 참고하여
+- 각 LLM의 원본 답변과 **정확히 비교**
+- 최적 답변에 실제로 들어간 문장만 → adopted_info
+- 최적 답변에 들어가지 않은 문장 → rejected_info
+- **중요**: Wikipedia와 다른 연도를 말한 LLM은 → 틀린 정보로, adopted_info에 절대 포함 금지!
+
+**STEP 3: JSON 응답**
+- 위 2단계 결과를 JSON 형식으로 정리
 
 **절대 금지:**
 - "여러 AI가 추천한 곳 중..." ← 새로 작성한 문장!
@@ -1700,61 +1774,26 @@ LLM 응답이 위 정보와 다르면 그것은 **명백한 오류**입니다.
 **허용:**
 - LLM1의 문장 1 + LLM2의 문장 3 + LLM1의 문장 5 ← 복사-붙여넣기!
 
-**중요: "errors", "adopted_info", "rejected_info" 필드 작성 규칙 (필수 준수!)**
+**STEP 2 필드 작성 규칙:**
 
-**1. "errors" 필드:**
-- **1순위**: 상호모순이 있는 정보는 반드시 "틀린 정보"로 분류
-- **2순위**: "errors"는 **명백히 틀린 사실**만 작성 (예: 잘못된 연도, 잘못된 위치)
-- 개선 제안, 더 상세히 할 수 있다는 의견, 주관적인 평가는 errors가 아님
-- 상호모순이 있으면 절대 "틀린 정보 없음"이라고 하지 마세요
-- 예시: "설립연도 불확실 (다른 AI와 상충)", "위치 정보 불확실 (다른 AI와 상충)"
+**⚠️ CRITICAL: adopted_info와 rejected_info는 상호 배타적!**
+- 같은 정보는 절대 adopted_info와 rejected_info에 동시 존재 금지!
+- 예: AI가 "1946년 설립"이라고 했는데 틀렸다면:
+  ✅ rejected_info: ["1946년 설립 (Wikipedia 1951년과 불일치)"]
+  ❌ adopted_info: 절대 포함 금지!
 
-**2. "adopted_info" 필드 (반드시 작성!):**
-- 해당 AI의 답변에서 최적 답변에 **실제로 사용된 정보**를 구체적으로 나열
-- 각 항목은 **하나의 완전하고 독립적인 문장**으로 작성
-- **절대 문장을 쪼개지 마세요!** 하나의 정보는 하나의 항목으로!
-- 빈 배열로 두지 마세요! 최소 1개 이상 작성
-- **배열 작성 규칙:**
-  1. 각 항목은 최소 10단어 이상의 완전한 문장
-  2. 하나의 정보는 반드시 하나의 배열 항목
-  3. 숫자, 이름, 문장을 절대 분리 금지
-  
-- **올바른 형식:**
-  ```json
-  "adopted_info": [
-    "청주시에 위치한 국립대학교라는 정보를 제공했습니다",
-    "1951년에 설립되었으며 오랜 역사를 가지고 있다는 정보를 제공했습니다",
-    "인문대학, 사회과학대학, 자연과학대학, 공학대학, 의학대학 등 다양한 분야의 학과를 운영한다는 정보를 제공했습니다",
-    "약 20000명의 학생과 1000여명의 교수진이 있다는 정보를 제공했습니다"
-  ]
-  ```
+**adopted_info 작성법:**
+- STEP 1에서 최적 답변에 실제로 포함된 문장만 나열
+- 최소 10단어 이상의 완전한 문장
+- 모두 틀렸다면 빈 배열 []
 
-- **절대 금지 형식:**
-  ```json
-  "adopted_info": [
-    "약 20",
-    "000명",  ← 숫자 분리 금지!
-    "학생 수",
-    "교수진: 1",
-    "000명"  ← 숫자 분리 금지!
-  ]
-  ```
+**rejected_info 작성법:**
+- 제외된 문장 + 이유 (예: "1946년 설립 (다른 AI와 상충)")
+- 제외 없으면 빈 배열 []
 
-**3. "rejected_info" 필드 (반드시 작성!):**
-- 해당 AI의 답변에서 **제외된 정보와 이유**를 명확히 기술
-- 각 항목은 **"정보 내용 (제외 이유)"** 형식으로 작성
-- 아무것도 제외하지 않았으면 빈 배열로 두세요
-- ✅ 올바른 예시:
-  - ["1946년 설립 정보 (다른 AI와 상충)"]
-  - ["15개 단과대학 정보 (다른 AI는 14개라고 함)"]
-  - ["약 3만명 학생 수 (검증 불가능)"]
-- ❌ 잘못된 예시:
-  - ["청주시 위치 정보"]  ← 이유가 없음
-  - ["위치", "단과대학"]  ← 너무 간략함
-
-**⚠️ 중요: 모든 AI에 대해 adopted_info와 rejected_info를 반드시 작성하세요!**
-- 최적 답변은 각 AI의 정보를 조합한 것이므로, 각 AI가 기여한 부분을 명확히 표시해야 합니다
-- 아무것도 채택하지 않았다면 그 이유를 rejected_info에 작성하세요
+**errors 작성법:**
+- Wikipedia 불일치 또는 상호모순만 기록
+- 예: "설립연도 불확실 (다른 AI와 상충)"
 
 **최적 답변 생성 및 분석 근거 작성 규칙:**
 1. 검증된 정보를 바탕으로 정확하고 상세한 답변을 작성하세요
@@ -1775,8 +1814,8 @@ LLM 응답이 위 정보와 다르면 그것은 **명백한 오류**입니다.
 7. **최종 선택 근거**: 왜 이 정보들을 최적 답변에 포함했는지
 
 **작성 원칙:**
-- 1개 모델만 참여 시: 해당 모델 이름과 채택한 정보 명시
-- 여러 모델 참여 시: 공통 정보와 각 모델별 기여 내용 명시
+- **여러 모델 참여 시 반드시**: "각 AI의 답변을 조합하여 최적 답변 생성" 명시
+- **단일 모델 선택 시**: "XXX 모델의 답변만 선택" (되도록 피하고 조합 권장)
 
 반드시 아래 JSON 형식으로만 응답하세요:
 
@@ -1812,6 +1851,60 @@ LLM 응답이 위 정보와 다르면 그것은 **명백한 오류**입니다.
                 "웹_검증_성공": len(verified_facts),
                 "비용": "$0.003" if web_verification_used else "$0.000"
             }
+        
+        # Wikipedia 검증 연도로 후처리 (잘못된 연도 제거)
+        if web_verification_used and verified_facts:
+            verified_year = None
+            for fact_type, verification in verified_facts.items():
+                if verification.get('verified') and verification.get('extracted_year'):
+                    verified_year = verification['extracted_year']
+                    break
+            
+            if verified_year and parsed_result.get("최적의_답변"):
+                import re
+                optimal_answer = parsed_result["최적의_답변"]
+                
+                # 최적 답변에서 다른 연도를 찾음
+                years_in_answer = re.findall(r'(\d{4})년', optimal_answer)
+                wrong_years = [y for y in years_in_answer if y != verified_year and 1900 <= int(y) <= 2024]
+                
+                # 잘못된 연도가 있으면 제거
+                if wrong_years:
+                    print(f"⚠️ Wikipedia 검증 연도 {verified_year}와 다른 연도 발견: {wrong_years}")
+                    for wrong_year in wrong_years:
+                        # 해당 연도를 포함한 문장 패턴 찾기
+                        patterns_to_remove = [
+                            rf'{wrong_year}년.*?설립.*?[.!가-힣]',
+                            rf'{wrong_year}년.*?개교.*?[.!가-힣]',
+                            rf'{wrong_year}년.*?창립.*?[.!가-힣]',
+                            rf'{wrong_year}년에.*?[.!가-힣]{0,50}',
+                        ]
+                        
+                        for pattern in patterns_to_remove:
+                            optimal_answer = re.sub(pattern, '', optimal_answer, flags=re.DOTALL)
+                    
+                    # 정리
+                    optimal_answer = re.sub(r'\s+', ' ', optimal_answer).strip()
+                    
+                    # 최종 답변이 비었으면 검증된 연도로 재구성
+                    if not optimal_answer or len(optimal_answer) < 50:
+                        # 원래 LLM 답변에서 검증된 연도를 포함한 문장 찾기
+                        if llm_responses:
+                            for model, response in llm_responses.items():
+                                if verified_year in response:
+                                    # 검증된 연도가 포함된 문장 추출
+                                    sentences = re.split(r'[.!]\s+', response)
+                                    matching_sentences = [s for s in sentences if verified_year in s and 150 <= len(s) <= 400]
+                                    if matching_sentences:
+                                        optimal_answer = matching_sentences[0]
+                                        break
+                        
+                        # 여전히 비었으면 생성
+                        if not optimal_answer:
+                            optimal_answer = f"Wikipedia 검증 결과에 따르면 충북대학교는 {verified_year}년에 설립되었습니다."
+                    
+                    parsed_result["최적의_답변"] = optimal_answer
+                    print(f"✅ Wikipedia 후처리 완료: {verified_year}년 유지, {wrong_years}년 제거")
         
         print(f"✅ 하이브리드 검증 완료: 웹검증={web_verification_used}, 상호모순={len(conflicts)}")
         

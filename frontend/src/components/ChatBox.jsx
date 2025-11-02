@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Send, CirclePlus, Image as ImageIcon, File as FileIcon, X, BarChart3, Video } from "lucide-react";
+import { Send, CirclePlus, Image as ImageIcon, File as FileIcon, X, BarChart3, Video, Brain } from "lucide-react";
 import { useChat } from "../context/ChatContext";
 import SimilarityDetailModal from "./SimilarityDetailModal";
+import AIAnalysisModal from "./AIAnalysisModal";
 import { api } from "../utils/api";
 import { useNavigate } from "react-router-dom";
 
@@ -26,7 +27,7 @@ const OptimalResponseRenderer = ({ content }) => {
         if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
         currentSection = 'analysis';
         currentContent = [];
-      } else if (line.startsWith('**검증 결과:**') || line.startsWith('## 분석 근거') || line.startsWith('## 🔍 분석 근거') || line.startsWith('## 🔍 검증 결과')) {
+      } else if (line.startsWith('**검증 결과:**') || line.startsWith('## 분석 근거') || line.startsWith('## 🔍 분석 근거') || line.startsWith('## 🔍 검증 결과') || line.startsWith('**📊 답변 생성 근거:**')) {
         if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
         currentSection = 'rationale';
         currentContent = [];
@@ -51,33 +52,30 @@ const OptimalResponseRenderer = ({ content }) => {
     const analyses = {};
     const lines = analysisText.split('\n');
     let currentAI = '';
-    let currentAnalysis = { pros: [], cons: [], confidence: 0, warnings: [] };
+    let currentAnalysis = { pros: [], cons: [], confidence: 0, warnings: [], adopted: [], rejected: [] };
     
     for (const line of lines) {
       const trimmedLine = line.trim();
       
-      if (trimmedLine.startsWith('**') && trimmedLine.endsWith(':**')) {
+      if (trimmedLine.startsWith('**') && (trimmedLine.endsWith(':**') || trimmedLine.endsWith('**'))) {
         if (currentAI) {
           analyses[currentAI] = currentAnalysis;
         }
         
-        currentAI = trimmedLine.replace(/\*\*/g, '').replace(':**', '');
-        currentAnalysis = { pros: [], cons: [], confidence: 0, warnings: [] };
+        currentAI = trimmedLine.replace(/\*\*/g, '').replace(':**', '').replace('**', '');
+        currentAnalysis = { pros: [], cons: [], confidence: 0, warnings: [], adopted: [], rejected: [] };
       } else if (trimmedLine.includes('정확성:')) {
         const accuracy = trimmedLine.replace(/.*정확성:\s*/, '').trim();
         if (accuracy === '✅') {
-          currentAnalysis.pros = ['정확한 정보 제공'];
-          currentAnalysis.confidence = 90;
+          currentAnalysis.pros = currentAnalysis.pros.length ? currentAnalysis.pros : ['정확한 정보 제공'];
+          if (!currentAnalysis.confidence) currentAnalysis.confidence = 90;
         } else if (accuracy === '❌') {
-          currentAnalysis.pros = [];
-          currentAnalysis.confidence = 20;
+          if (!currentAnalysis.confidence) currentAnalysis.confidence = 20;
         }
       } else if (trimmedLine.includes('오류:')) {
         const error = trimmedLine.replace(/.*오류:\s*/, '').trim();
         if (error && error !== '오류 없음') {
           currentAnalysis.cons = [error];
-        } else {
-          currentAnalysis.cons = [];
         }
       } else if (trimmedLine.includes('✅ 정확한 정보:')) {
         const info = trimmedLine.replace('✅ 정확한 정보:', '').trim();
@@ -94,7 +92,7 @@ const OptimalResponseRenderer = ({ content }) => {
           currentAnalysis.cons = [];
         }
       } else if (trimmedLine.includes('📊 신뢰도:')) {
-        const confidenceMatch = trimmedLine.match(/📊 신뢰도: (\d+)%/);
+        const confidenceMatch = trimmedLine.match(/📊 신뢰도:\s*(\d+)%/);
         if (confidenceMatch) {
           currentAnalysis.confidence = parseInt(confidenceMatch[1]);
         }
@@ -102,6 +100,16 @@ const OptimalResponseRenderer = ({ content }) => {
         const info = trimmedLine.replace('⚠️ 충돌 경고:', '').trim();
         if (info) {
           currentAnalysis.warnings = info.split(',').map(i => i.trim()).filter(i => i.length > 0);
+        }
+      } else if (trimmedLine.startsWith('✅ 채택된 정보:')) {
+        const info = trimmedLine.replace('✅ 채택된 정보:', '').trim();
+        if (info && info !== '없음' && info !== '없습니다') {
+          currentAnalysis.adopted.push(info);
+        }
+      } else if (trimmedLine.startsWith('❌ 제외된 정보:')) {
+        const info = trimmedLine.replace('❌ 제외된 정보:', '').trim();
+        if (info && info !== '없음' && info !== '없습니다') {
+          currentAnalysis.rejected.push(info);
         }
       }
     }
@@ -143,70 +151,9 @@ const OptimalResponseRenderer = ({ content }) => {
           </div>
         </div>
       )}
+      {/* 분석 근거 및 각 AI 검증 결과는 모달에서만 표시 */}
       
-      {Object.keys(analysisData).length > 0 && (
-        <div className="optimal-section ai-analysis">
-          <h3 className="section-title">
-            각 AI 분석
-          </h3>
-          <div className="analysis-grid">
-            {Object.entries(analysisData).map(([aiName, analysis]) => (
-              <div key={aiName} className="ai-analysis-card">
-                <h4 className="ai-name">{aiName}</h4>
-                {analysis.pros.length > 0 && (
-                  <div className="analysis-item pros">
-                    <span className="pros-label">✅ 정확한 정보:</span>
-                    <ul>
-                      {analysis.pros.map((pro, index) => (
-                        <li key={index}>{pro}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {analysis.cons.length > 0 && (
-                  <div className="analysis-item cons">
-                    <span className="cons-label">❌ 틀린 정보:</span>
-                    <ul>
-                      {analysis.cons.map((con, index) => (
-                        <li key={index}>{con}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {analysis.confidence > 0 && (
-                  <div className="analysis-item confidence">
-                    <span className="confidence-label">📊 신뢰도:</span>
-                    <span className={`confidence-value ${analysis.confidence >= 80 ? 'high' : analysis.confidence >= 60 ? 'medium' : 'low'}`}>
-                      {analysis.confidence}%
-                    </span>
-                  </div>
-                )}
-                {analysis.warnings.length > 0 && (
-                  <div className="analysis-item warnings">
-                    <span className="warnings-label">⚠️ 충돌 경고:</span>
-                    <ul>
-                      {analysis.warnings.map((warning, index) => (
-                        <li key={index}>{warning}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      
-      {sections.rationale && (
-        <div className="optimal-section rationale">
-          <h3 className="section-title">
-            분석 근거
-          </h3>
-          <div className="section-content">
-            {sections.rationale}
-          </div>
-        </div>
-      )}
+      {/* 분석 모달 버튼은 유지 */}
       
       {sections.recommendation && (
         <div className="optimal-section recommendation">
@@ -263,6 +210,8 @@ const ChatBox = () => {
 
   const [similarityData, setSimilarityData] = useState({});
   const [isSimilarityModalOpen, setIsSimilarityModalOpen] = useState(false);
+  const [aiAnalysisData, setAiAnalysisData] = useState({});
+  const [isAIAnalysisModalOpen, setIsAIAnalysisModalOpen] = useState(false);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -397,6 +346,11 @@ const ChatBox = () => {
     setInputMessage("");
     setImageAttachments([]);
     setFileAttachments([]);
+    
+    // textarea ref를 통한 강제 초기화 (한글 조합 중인 문자 제거)
+    if (textareaRef.current) {
+      textareaRef.current.value = "";
+    }
 
     try {
       // 항상 Base64 방식으로 통일
@@ -433,6 +387,11 @@ const ChatBox = () => {
       setInputMessage(messageToSend);
       setImageAttachments(imagesToSend);
       setFileAttachments(filesToSend);
+      
+      // textarea ref도 복원
+      if (textareaRef.current) {
+        textareaRef.current.value = messageToSend;
+      }
     }
   };
 
@@ -874,21 +833,140 @@ const ChatBox = () => {
                               similarityData={message.similarityData}
                             />
                             
-                            {hasSimilarityData && (
-                              <div className="mt-3 flex justify-center">
-                                <button
-                                  onClick={() => {
-                                    setSimilarityData(hasSimilarityData);
-                                    setIsSimilarityModalOpen(true);
-                                  }}
-                                  className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors font-medium"
-                                  title="유사도 분석 결과 보기"
-                                >
-                                  <BarChart3 size={16} />
-                                  유사도 분석 결과
-                                </button>
-                              </div>
-                            )}
+                            {/* Parse AI analysis data */}
+                            {(() => {
+                              const parseOptimalResponseForAnalysis = (text) => {
+                                if (!text) return {};
+                                const sections = {};
+                                const lines = text.split('\n');
+                                let currentSection = '';
+                                let currentContent = [];
+                                
+                                for (const line of lines) {
+                                  if (line.startsWith('**각 LLM 검증 결과:**') || line.startsWith('**각 AI 분석:**')) {
+                                    if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
+                                    currentSection = 'analysis';
+                                    currentContent = [];
+                                  } else if (line.startsWith('**📊 답변 생성 근거:**')) {
+                                    if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
+                                    currentSection = 'rationale';
+                                    currentContent = [];
+                                  } else if (line.startsWith('**⚠️') || line.startsWith('⚠️')) {
+                                    if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
+                                    currentSection = 'contradictions';
+                                    currentContent = [];
+                                  } else if (line.trim() !== '') {
+                                    currentContent.push(line);
+                                  }
+                                }
+                                if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
+                                return sections;
+                              };
+                              
+                              const parseAIAnalysisData = (analysisText) => {
+                                const analyses = {};
+                                const lines = analysisText.split('\n');
+                                let currentAI = '';
+                                let currentAnalysis = { 
+                                  accuracy: '✅', 
+                                  pros: [], 
+                                  cons: [], 
+                                  confidence: 0,
+                                  adopted: [],
+                                  rejected: []
+                                };
+                                
+                                for (const line of lines) {
+                                  const trimmedLine = line.trim();
+                                  
+                                  if (trimmedLine.startsWith('**') && (trimmedLine.endsWith(':**') || trimmedLine.endsWith('**'))) {
+                                    if (currentAI) {
+                                      analyses[currentAI] = currentAnalysis;
+                                    }
+                                    currentAI = trimmedLine.replace(/\*\*/g, '').replace(':**', '').replace('**', '');
+                                    currentAnalysis = { 
+                                      accuracy: '✅', 
+                                      pros: [], 
+                                      cons: [], 
+                                      confidence: 0,
+                                      adopted: [],
+                                      rejected: []
+                                    };
+                                  } else if (trimmedLine.includes('✅ 정확성:')) {
+                                    currentAnalysis.accuracy = trimmedLine.includes('✅ 정확성: ✅') ? '✅' : '❌';
+                                  } else if (trimmedLine.includes('❌ 오류:')) {
+                                    const error = trimmedLine.replace('❌ 오류:', '').trim();
+                                    if (error && error !== '오류 없음' && error !== '정확한 정보 제공') {
+                                      currentAnalysis.cons = [error];
+                                    }
+                                  } else if (trimmedLine.includes('📊 신뢰도:')) {
+                                    const match = trimmedLine.match(/📊 신뢰도:\s*(\d+)%/);
+                                    if (match) {
+                                      currentAnalysis.confidence = parseInt(match[1]);
+                                    }
+                                  } else if (trimmedLine.startsWith('✅ 채택된 정보:')) {
+                                    const info = trimmedLine.replace('✅ 채택된 정보:', '').trim();
+                                    if (info && info !== '없음' && info !== '없습니다') {
+                                      currentAnalysis.adopted.push(info);
+                                    }
+                                  } else if (trimmedLine.startsWith('❌ 제외된 정보:')) {
+                                    const info = trimmedLine.replace('❌ 제외된 정보:', '').trim();
+                                    if (info && info !== '없음' && info !== '없습니다') {
+                                      currentAnalysis.rejected.push(info);
+                                    }
+                                  }
+                                }
+                                
+                                if (currentAI) {
+                                  analyses[currentAI] = currentAnalysis;
+                                }
+                                
+                                // "⚠️ 발견된 상호모순" 제거
+                                const keysToRemove = ["⚠️ 발견된 상호모순", "⚠️ 발견된 상호모순:", "발견된 상호모순"];
+                                keysToRemove.forEach(key => {
+                                  if (analyses[key]) delete analyses[key];
+                                });
+                                
+                                return analyses;
+                              };
+                              
+                              const parsed = parseOptimalResponseForAnalysis(message.text);
+                              const hasAnalysis = parsed.analysis && Object.keys(parseAIAnalysisData(parsed.analysis)).length > 0;
+                              
+                              return (hasSimilarityData || hasAnalysis) && (
+                                <div className="mt-3 flex justify-center gap-2">
+                                  {hasSimilarityData && (
+                                    <button
+                                      onClick={() => {
+                                        setSimilarityData(hasSimilarityData);
+                                        setIsSimilarityModalOpen(true);
+                                      }}
+                                      className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors font-medium"
+                                      title="유사도 분석 결과 보기"
+                                    >
+                                      <BarChart3 size={16} />
+                                      유사도 분석 결과
+                                    </button>
+                                  )}
+                                  {hasAnalysis && (
+                                    <button
+                                      onClick={() => {
+                                        setAiAnalysisData({
+                                          analysisData: parseAIAnalysisData(parsed.analysis),
+                                          rationale: parsed.rationale || ""
+                                        });
+                                        setIsAIAnalysisModalOpen(true);
+                                      }}
+                                      className="flex items-center gap-2 px-3 py-2 text-sm bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg transition-colors font-medium"
+                                      title="각 AI 분석 결과 보기"
+                                    >
+                                      <Brain size={16} />
+                                      각 AI 분석
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </div>
                         ) : (
                           <div>{message.text}</div>
@@ -961,6 +1039,10 @@ const ChatBox = () => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 if (!isLoading) {
+                  // 한글 조합 중인지 확인
+                  if (e.nativeEvent.isComposing) {
+                    return;
+                  }
                   handleSendMessage(e);
                 }
               }
@@ -1023,6 +1105,12 @@ const ChatBox = () => {
         isOpen={isSimilarityModalOpen}
         onClose={() => setIsSimilarityModalOpen(false)}
         similarityData={similarityData}
+      />
+      
+      <AIAnalysisModal
+        isOpen={isAIAnalysisModalOpen}
+        onClose={() => setIsAIAnalysisModalOpen(false)}
+        analysisData={aiAnalysisData}
       />
     </div>
   );

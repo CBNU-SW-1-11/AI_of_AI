@@ -351,7 +351,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
           const requestData = {
             message: messageText || '',
             user_id: 'default_user',
-            judge_model: 'GPT-3.5-turbo',
+            judge_model: 'GPT-4o-mini',
             selected_models: selectedModels || []
           };
           
@@ -361,7 +361,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
             const formData = new FormData();
             formData.append('message', messageText || '');
             formData.append('user_id', 'default_user');
-            formData.append('judge_model', 'GPT-3.5-turbo');
+            formData.append('judge_model', 'GPT-4o-mini');
             formData.append('selected_models', JSON.stringify(selectedModels || []));
             
             const firstFile = filesBase64[0] || imagesBase64[0] || videosBase64[0];

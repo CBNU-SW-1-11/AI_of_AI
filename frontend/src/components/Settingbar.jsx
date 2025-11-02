@@ -11,7 +11,8 @@ const Settingbar = ({ isOpen, onClose }) => {
   
   // 심판 모델 관련 상태
   const [availableJudgeModels, setAvailableJudgeModels] = useState({});
-  const [currentJudgeModel, setCurrentJudgeModel] = useState("gpt-3.5-turbo");
+  const [currentJudgeModel, setCurrentJudgeModel] = useState("GPT-4o-mini");
+  const [loadingJudgeModels, setLoadingJudgeModels] = useState(false);
   const languages = [
     "Afrikaans", "Bahasa Indonesia", "Bahasa Melayu", "Català", "Čeština", "Dansk", "Deutsch", 
     "Eesti", "English (United Kingdom)", "English (United States)", "Español (España)", "Español (Latinoamérica)", 
@@ -26,14 +27,21 @@ const Settingbar = ({ isOpen, onClose }) => {
   // 심판 모델 목록 불러오기
   useEffect(() => {
     const fetchJudgeModels = async () => {
+      setLoadingJudgeModels(true);
       try {
+        console.log('🔍 심판 모델 목록 조회 중...');
         const response = await api.get('/api/verification/models/');
+        console.log('✅ 심판 모델 응답:', response.data);
         if (response.data.success) {
+          console.log('📋 사용 가능한 모델:', response.data.models);
           setAvailableJudgeModels(response.data.models);
-          setCurrentJudgeModel(response.data.current_model || "gpt-3.5-turbo");
+          setCurrentJudgeModel(response.data.current_model || "GPT-4o-mini");
+          console.log('✅ 심판 모델 설정 완료:', response.data.current_model);
         }
       } catch (error) {
-        console.warn('심판 모델 목록 조회 실패:', error);
+        console.error('❌ 심판 모델 목록 조회 실패:', error);
+      } finally {
+        setLoadingJudgeModels(false);
       }
     };
 
@@ -125,7 +133,16 @@ const Settingbar = ({ isOpen, onClose }) => {
             <p className="text-sm text-gray-600 mb-4 text-left">최적의 응답을 생성할 AI 모델을 선택하세요.</p>
             <hr className="w-full border-gray-300 mb-4" />
             <div className="grid grid-cols-3 gap-4 mb-6">
-              {Object.entries(availableJudgeModels).map(([modelKey, modelInfo]) => {
+              {loadingJudgeModels ? (
+                <div className="col-span-3 text-center py-8 text-gray-500">
+                  심판 모델을 불러오는 중...
+                </div>
+              ) : Object.keys(availableJudgeModels).length === 0 ? (
+                <div className="col-span-3 text-center py-8 text-red-500">
+                  ❌ 심판 모델을 불러올 수 없습니다.
+                </div>
+              ) : (
+                Object.entries(availableJudgeModels).map(([modelKey, modelInfo]) => {
                 const modelName = modelInfo.name;
                 const isSelected = currentJudgeModel === modelKey;
                 
@@ -169,7 +186,7 @@ const Settingbar = ({ isOpen, onClose }) => {
                     </ul>
                   </button>
                 );
-              })}
+              }))}
             </div>
             <button
               onClick={handleConfirm}
