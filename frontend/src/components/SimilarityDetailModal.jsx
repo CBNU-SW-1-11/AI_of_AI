@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertTriangle, Check, Globe, Code, BookOpen, List, Link as LinkIcon, BarChart4 } from "lucide-react";
+import { AlertTriangle, Check, Globe, BookOpen, List, Link as LinkIcon, BarChart4 } from "lucide-react";
 
 const SimilarityDetailModal = ({ isOpen, onClose, similarityData }) => {
   if (!isOpen) return null;
@@ -178,19 +178,6 @@ const SimilarityDetailModal = ({ isOpen, onClose, similarityData }) => {
               ) : (
                 <p className="text-gray-500 italic">유사도 행렬 데이터가 없습니다.</p>
               )}
-            </div>
-
-            {/* 개발자 정보 */}
-            <div className="border-t border-gray-200 pt-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                <Code className="mr-2 text-gray-600" size={20} />
-                개발자 정보
-              </h3>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <pre className="bg-gray-900 text-green-400 p-4 rounded-lg overflow-auto max-h-48 text-xs font-mono">
-                  {JSON.stringify(similarityData, null, 2)}
-                </pre>
-              </div>
             </div>
           </div>
         )}
