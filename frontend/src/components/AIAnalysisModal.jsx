@@ -5,14 +5,35 @@ const AIAnalysisModal = ({ isOpen, onClose, analysisData }) => {
   if (!isOpen) return null;
 
   // analysisData 구조 변경에 대응
-  const actualAnalysisData = analysisData?.analysisData || analysisData || {};
+  let rawAnalysisData = analysisData?.analysisData || analysisData || {};
   const rationale = analysisData?.rationale || "";
+  
+  // 백엔드 데이터 형식 변환 (채택된_정보, 제외된_정보 -> adopted, rejected)
+  // 백엔드: { "GPT-4o-Mini": { "정확성": "✅", "채택된_정보": [...], "제외된_정보": [...] } }
+  // 프론트엔드: { "GPT-4o-Mini": { "accuracy": "✅", "adopted": [...], "rejected": [...] } }
+  const actualAnalysisData = {};
+  Object.entries(rawAnalysisData).forEach(([modelName, data]) => {
+    if (data && typeof data === 'object') {
+      actualAnalysisData[modelName] = {
+        accuracy: data.정확성 || data.accuracy || '✅',
+        confidence: parseInt(data.신뢰도 || data.confidence || '0'),
+        adopted: data.채택된_정보 || data.adopted || [],
+        rejected: data.제외된_정보 || data.rejected || [],
+        error: data.오류 || data.error || '정확한 정보 제공'
+      };
+    }
+  });
+  
+  console.log('AIAnalysisModal - rawAnalysisData:', JSON.stringify(rawAnalysisData, null, 2));
+  console.log('AIAnalysisModal - actualAnalysisData:', JSON.stringify(actualAnalysisData, null, 2));
+  console.log('AIAnalysisModal - rationale:', rationale);
+  console.log('AIAnalysisModal - Object.keys(actualAnalysisData):', Object.keys(actualAnalysisData));
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-      <div className="bg-white rounded-lg p-6 w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200">
+      <div className="bg-white rounded-lg w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl">
+        {/* Header - 상단 고정 */}
+        <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
           <div>
             <h2 className="text-2xl font-semibold text-gray-800">각 AI 분석 결과</h2>
             <p className="text-gray-500 text-sm mt-1">각 LLM 모델의 상세 검증 결과</p>
@@ -25,8 +46,8 @@ const AIAnalysisModal = ({ isOpen, onClose, analysisData }) => {
           </button>
         </div>
 
-        {/* Content */}
-        <div className="space-y-6">
+        {/* Content - 스크롤 가능 */}
+        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
           {/* 분석 근거 섹션 - 강조 표시 */}
           {rationale && (
             <div className="border-2 border-blue-400 rounded-lg p-6 bg-blue-50 shadow-lg">
@@ -131,16 +152,6 @@ const AIAnalysisModal = ({ isOpen, onClose, analysisData }) => {
               </div>
             </div>
           )}
-        </div>
-
-        {/* Close Button */}
-        <div className="mt-6 pt-4 border-t border-gray-200 flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors font-medium"
-          >
-            닫기
-          </button>
         </div>
       </div>
     </div>

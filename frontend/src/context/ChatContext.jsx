@@ -100,11 +100,43 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
       const sizeInMB = (new Blob([jsonString]).size) / 1024 / 1024;
       
       if (sizeInMB > 5) {
-        console.warn(`⚠️ 메시지 저장 크기가 큽니다: ${sizeInMB.toFixed(2)}MB. 큰 파일 데이터는 제외됩니다.`);
+        console.warn(`⚠️ 메시지 저장 크기가 큽니다: ${sizeInMB.toFixed(2)}MB. 모든 파일 데이터와 오래된 메시지를 제외합니다.`);
         
-        // 큰 파일 데이터를 제거하고 다시 저장
-        const cleanedMessages = optimizeMessages(newMessages);
-        const cleanedJson = JSON.stringify({ ...allMessages, [conversationId]: cleanedMessages });
+        // 더 공격적인 정리: 모든 파일의 dataUrl 제거 + 최근 메시지만 유지
+        const aggressiveOptimize = (messages) => {
+          const result = {};
+          for (const [model, msgs] of Object.entries(messages)) {
+            if (!Array.isArray(msgs)) continue;
+            
+            // 최근 30개 메시지만 유지 (대화 15턴)
+            const recentMsgs = msgs.slice(-30);
+            
+            result[model] = recentMsgs.map(msg => {
+              if (!msg) return msg;
+              
+              // 모든 파일의 dataUrl 제거
+              const cleanedFiles = msg.files ? msg.files.map(file => ({
+                name: file.name,
+                type: file.type,
+                size: file.size,
+                dataUrl: null // 모든 파일 데이터 제거
+              })) : msg.files;
+              
+              return {
+                ...msg,
+                files: cleanedFiles
+              };
+            });
+          }
+          return result;
+        };
+        
+        const cleanedMessages = aggressiveOptimize(newMessages);
+        const cleanedAll = { ...allMessages, [conversationId]: cleanedMessages };
+        const cleanedJson = JSON.stringify(cleanedAll);
+        const cleanedSize = (new Blob([cleanedJson]).size) / 1024 / 1024;
+        
+        console.log(`✅ 정리 후 크기: ${cleanedSize.toFixed(2)}MB`);
         sessionStorage.setItem(MESSAGES_KEY, cleanedJson);
       } else {
         sessionStorage.setItem(MESSAGES_KEY, jsonString);
@@ -485,7 +517,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
           const requestData = {
             message: messageText || '',
             user_id: 'default_user',
-            judge_model: 'GPT-5',
+            judge_model: 'GPT-4o',
             selected_models: selectedModels || []
           };
           
@@ -495,7 +527,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
             const formData = new FormData();
             formData.append('message', messageText || '');
             formData.append('user_id', 'default_user');
-            formData.append('judge_model', 'GPT-5');
+            formData.append('judge_model', 'GPT-4o');
             formData.append('selected_models', JSON.stringify(selectedModels || []));
             
             const firstFile = filesBase64[0] || imagesBase64[0] || videosBase64[0];
@@ -514,12 +546,14 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
               headers: {
                 'Content-Type': 'multipart/form-data',
               },
+              timeout: 180000, // 3분
             });
           } else {
             response = await api.post(`/chat/optimal/`, requestData, {
               headers: {
                 'Content-Type': 'application/json',
               },
+              timeout: 180000, // 3분
             });
           }
 
@@ -529,6 +563,8 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
             dataKeys: Object.keys(data),
             responseLength: data.response ? data.response.length : 0,
             responsePreview: data.response ? data.response.substring(0, 100) : 'null',
+            hasAnalysisData: !!data.analysisData,
+            hasRationale: !!data.rationale,
             fullData: data
           });
           
@@ -549,13 +585,18 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
             console.log('Creating optimal message for userMessage ID:', userMessage.id);
             console.log('Available similarity data:', newMessages['_similarityData']);
             console.log('Retrieved similarity data:', similarityData);
+            console.log('Analysis data from backend:', JSON.stringify(data.analysisData, null, 2));
+            console.log('Rationale from backend:', data.rationale);
 
             const optimalMessage = {
               text: data.response || data.error || "최적화된 응답을 받았습니다.",
               isUser: false,
               timestamp: new Date().toISOString(),
               id: Date.now() + Math.random() + 'optimal',
-              similarityData: similarityData
+              similarityData: similarityData,
+              // 백엔드에서 받은 분석 데이터 저장
+              analysisData: data.analysisData || null,
+              rationale: data.rationale || null
             };
 
             console.log('✅ OPTIMAL 메시지 생성:', {

@@ -1297,9 +1297,23 @@ const ChatBox = () => {
                                   {hasAnalysis && (
                                     <button
                                       onClick={() => {
+                                        // 백엔드에서 받은 JSON 데이터 우선 사용, 없으면 텍스트 파싱
+                                        let analysisData = message.analysisData;
+                                        let rationale = message.rationale;
+                                        
+                                        if (!analysisData || Object.keys(analysisData).length === 0) {
+                                          // 텍스트 파싱 폴백
+                                          analysisData = parseAIAnalysisData(parsed.analysis);
+                                          rationale = parsed.rationale || "";
+                                        }
+                                        
+                                        console.log('Setting AI analysis data:');
+                                        console.log('- analysisData:', JSON.stringify(analysisData, null, 2));
+                                        console.log('- rationale:', rationale);
+                                        
                                         setAiAnalysisData({
-                                          analysisData: parseAIAnalysisData(parsed.analysis),
-                                          rationale: parsed.rationale || ""
+                                          analysisData: analysisData,
+                                          rationale: rationale || ""
                                         });
                                         setIsAIAnalysisModalOpen(true);
                                       }}

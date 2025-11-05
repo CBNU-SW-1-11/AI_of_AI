@@ -85,8 +85,8 @@ class FactualVerificationSystem:
             }
         }
         
-        # 현재 선택된 검증 모델 (기본값: GPT-5 - 최고 성능)
-        self.current_verification_model = 'GPT-5'
+        # 현재 선택된 검증 모델 (기본값: GPT-4o - 빠른 속도 + 우수한 성능)
+        self.current_verification_model = 'GPT-4o'
         
         # 신뢰할 수 있는 소스들 (범용)
         self.trusted_sources = {
