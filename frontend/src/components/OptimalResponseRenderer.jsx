@@ -1,6 +1,97 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { api } from '../utils/api';
 import AIAnalysisModal from './AIAnalysisModal';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Copy, Check } from 'lucide-react';
+
+// 코드 복사 컴포넌트
+const CodeBlock = ({ children, className, ...props }) => {
+  const [copied, setCopied] = useState(false);
+  const codeRef = useRef(null);
+  
+  const codeString = typeof children === 'string' ? children : 
+    (Array.isArray(children) ? children.join('') : String(children));
+  
+  const handleCopy = async (e) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(codeString);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('복사 실패:', err);
+    }
+  };
+  
+  const isInline = !className || !className.includes('language-');
+  
+  if (isInline) {
+    return <code className={className} {...props}>{children}</code>;
+  }
+  
+  return (
+    <div className="relative group" style={{ marginBottom: '1rem' }}>
+      <pre 
+        className={className} 
+        {...props} 
+        ref={codeRef}
+        style={{
+          backgroundColor: '#f3f4f6',
+          color: '#1f2937'
+        }}
+      >
+        <code style={{ color: '#1f2937' }}>{children}</code>
+      </pre>
+      <button
+        onClick={handleCopy}
+        className="absolute top-2 right-2 p-2 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors"
+        title={copied ? "복사됨!" : "코드 복사"}
+        style={{ 
+          zIndex: 10
+        }}
+      >
+        {copied ? (
+          <Check size={14} className="text-green-600" />
+        ) : (
+          <Copy size={14} />
+        )}
+      </button>
+    </div>
+  );
+};
+
+// 전체 복사 컴포넌트 (아이콘만)
+const CopyAllButton = ({ content }) => {
+  const [copied, setCopied] = useState(false);
+  
+  const handleCopyAll = async (e) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('전체 복사 실패:', err);
+    }
+  };
+  
+  if (!content || content.trim().length === 0) return null;
+  
+  return (
+    <button
+      onClick={handleCopyAll}
+      className="flex items-center justify-center p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors mt-2"
+      title={copied ? "복사됨!" : "전체 복사"}
+    >
+      {copied ? (
+        <Check size={16} className="text-green-600" />
+      ) : (
+        <Copy size={16} className="text-gray-600" />
+      )}
+    </button>
+  );
+};
 
 const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick, similarityData }) => {
   const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
@@ -94,7 +185,18 @@ const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick, simila
       {sections.integrated && (
         <div className="optimal-section integrated-answer">
           <h3 className="section-title">최적 답변</h3>
-          <div className="section-content">{sections.integrated}</div>
+          <div className="section-content">
+            <ReactMarkdown 
+              remarkPlugins={[remarkGfm]}
+              components={{
+                code: CodeBlock,
+                pre: ({ children, ...props }) => <pre {...props}>{children}</pre>
+              }}
+            >
+              {sections.integrated}
+            </ReactMarkdown>
+            <CopyAllButton content={sections.integrated} />
+          </div>
         </div>
       )}
       
@@ -145,21 +247,54 @@ const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick, simila
       {sections.rationale && (
         <div className="optimal-section rationale-section">
           <h3 className="section-title">분석 근거</h3>
-          <div className="section-content">{sections.rationale}</div>
+          <div className="section-content">
+            <ReactMarkdown 
+              remarkPlugins={[remarkGfm]}
+              components={{
+                code: CodeBlock,
+                pre: ({ children, ...props }) => <pre {...props}>{children}</pre>
+              }}
+            >
+              {sections.rationale}
+            </ReactMarkdown>
+            <CopyAllButton content={sections.rationale} />
+          </div>
         </div>
       )}
       
       {sections.recommendation && (
         <div className="optimal-section recommendation-section">
           <h3 className="section-title">최종 추천</h3>
-          <div className="section-content">{sections.recommendation}</div>
+          <div className="section-content">
+            <ReactMarkdown 
+              remarkPlugins={[remarkGfm]}
+              components={{
+                code: CodeBlock,
+                pre: ({ children, ...props }) => <pre {...props}>{children}</pre>
+              }}
+            >
+              {sections.recommendation}
+            </ReactMarkdown>
+            <CopyAllButton content={sections.recommendation} />
+          </div>
         </div>
       )}
       
       {sections.insights && (
         <div className="optimal-section insights-section">
           <h3 className="section-title">추가 인사이트</h3>
-          <div className="section-content">{sections.insights}</div>
+          <div className="section-content">
+            <ReactMarkdown 
+              remarkPlugins={[remarkGfm]}
+              components={{
+                code: CodeBlock,
+                pre: ({ children, ...props }) => <pre {...props}>{children}</pre>
+              }}
+            >
+              {sections.insights}
+            </ReactMarkdown>
+            <CopyAllButton content={sections.insights} />
+          </div>
         </div>
       )}
 

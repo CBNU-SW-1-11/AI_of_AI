@@ -53,14 +53,21 @@ class FactualVerificationSystem:
     """정확한 사실 검증 시스템"""
     
     def __init__(self):
-        # 검증 모델 설정 (사용자 선택 가능 - 3개 모델)
+        # 검증 모델 설정 (사용자 선택 가능)
         self.verification_models = {
+            'GPT-5': {
+                'name': 'GPT-5',
+                'cost': '보통',
+                'speed': '보통',
+                'quality': '최고',
+                'default': True
+            },
             'GPT-4o-mini': {
                 'name': 'GPT-4o Mini',
                 'cost': '저렴',
                 'speed': '빠름',
                 'quality': '높음',
-                'default': True
+                'default': False
             },
             'Gemini-2.0-Flash-Lite': {
                 'name': 'Gemini 2.0 Flash Lite',
@@ -78,8 +85,8 @@ class FactualVerificationSystem:
             }
         }
         
-        # 현재 선택된 검증 모델 (기본값: GPT-4o-mini - 가장 안정적)
-        self.current_verification_model = 'GPT-4o-mini'
+        # 현재 선택된 검증 모델 (기본값: GPT-5 - 최고 성능)
+        self.current_verification_model = 'GPT-5'
         
         # 신뢰할 수 있는 소스들 (범용)
         self.trusted_sources = {

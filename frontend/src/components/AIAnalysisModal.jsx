@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle, XCircle, TrendingUp, ThumbsUp, ThumbsDown, AlertCircle } from 'lucide-react';
+import { CheckCircle, XCircle, TrendingUp, ThumbsUp, ThumbsDown } from 'lucide-react';
 
 const AIAnalysisModal = ({ isOpen, onClose, analysisData }) => {
   if (!isOpen) return null;
@@ -88,11 +88,11 @@ const AIAnalysisModal = ({ isOpen, onClose, analysisData }) => {
                   )}
                 </div>
 
-                {/* 제외된 정보 */}
+                {/* 틀린 정보 */}
                 <div className="border border-gray-200 bg-red-50 p-4 rounded-lg">
                   <div className="flex items-center gap-2 mb-3">
                     <ThumbsDown className="text-red-600" size={18} />
-                    <h4 className="font-semibold text-gray-800 text-sm">제외된 정보</h4>
+                    <h4 className="font-semibold text-gray-800 text-sm">틀린 정보</h4>
                   </div>
                   {analysis.rejected && analysis.rejected.length > 0 ? (
                     <ul className="space-y-2">
@@ -104,54 +104,7 @@ const AIAnalysisModal = ({ isOpen, onClose, analysisData }) => {
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-sm text-gray-500 italic">제외된 정보가 없습니다</p>
-                  )}
-                </div>
-              </div>
-
-              {/* 정확한 정보 & 틀린 정보 */}
-              <div className="grid md:grid-cols-2 gap-4 mt-4">
-                {/* 정확한 정보 */}
-                <div className="border border-gray-200 bg-white p-4 rounded-lg">
-                  <div className="flex items-center gap-2 mb-3">
-                    <CheckCircle className="text-green-600" size={18} />
-                    <h4 className="font-semibold text-gray-700 text-sm">정확한 정보</h4>
-                  </div>
-                  {analysis.pros && analysis.pros.length > 0 ? (
-                    <ul className="space-y-2">
-                      {analysis.pros.map((pro, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm text-gray-600">
-                          <span className="text-green-500 mt-0.5">✓</span>
-                          <span className="leading-relaxed">{pro}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-gray-500">
-                      {analysis.accuracy === '✅' ? '정확한 정보 제공' : '정보 없음'}
-                    </p>
-                  )}
-                </div>
-
-                {/* 틀린 정보 */}
-                <div className="border border-gray-200 bg-white p-4 rounded-lg">
-                  <div className="flex items-center gap-2 mb-3">
-                    <AlertCircle className="text-red-600" size={18} />
-                    <h4 className="font-semibold text-gray-700 text-sm">틀린 정보</h4>
-                  </div>
-                  {analysis.cons && analysis.cons.length > 0 && 
-                   analysis.cons[0] !== '정확한 정보 제공' && 
-                   analysis.cons[0] !== '없음' ? (
-                    <ul className="space-y-2">
-                      {analysis.cons.map((con, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm text-gray-600">
-                          <span className="text-red-500 mt-0.5">✗</span>
-                          <span className="leading-relaxed">{con}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-gray-500">틀린 정보 없음</p>
+                    <p className="text-sm text-gray-500 italic">틀린 정보가 없습니다</p>
                   )}
                 </div>
               </div>

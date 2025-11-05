@@ -25,15 +25,28 @@ const Sidebar = () => {
     loadHistory();
   }, []);
 
-  // storage 이벤트 리스너
+  // storage 이벤트 리스너 (다른 탭에서 발생한 storage 이벤트)
   useEffect(() => {
     const onStorage = (e) => {
       if (e.key === HISTORY_KEY) {
         loadHistory();
       }
     };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    
+    // 같은 탭에서 발생한 storage 이벤트도 감지 (custom event)
+    const onCustomStorage = (e) => {
+      if (e.detail && e.detail.key === HISTORY_KEY) {
+        loadHistory();
+      }
+    };
+    
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('customstorage', onCustomStorage);
+    
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('customstorage', onCustomStorage);
+    };
   }, []);
 
   // 메뉴 외부 클릭 감지

@@ -46,31 +46,165 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
     if (!conversationId) return;
     
     try {
+      // 파일 데이터 최적화: 큰 파일은 메타데이터만 저장
+      const optimizeMessages = (messages) => {
+        if (!messages || typeof messages !== 'object') return messages;
+        
+        const optimized = {};
+        for (const [modelId, messageArray] of Object.entries(messages)) {
+          if (!Array.isArray(messageArray)) {
+            optimized[modelId] = messageArray;
+            continue;
+          }
+          
+          optimized[modelId] = messageArray.map(msg => {
+            if (!msg.files || !Array.isArray(msg.files)) return msg;
+            
+            // 파일 데이터 최적화
+            const optimizedFiles = msg.files.map(file => {
+              // dataUrl 크기 체크 (2MB 이상이면 메타데이터만 저장)
+              const dataUrlSize = file.dataUrl ? (file.dataUrl.length * 0.75) / 1024 / 1024 : 0; // Base64 대략적 크기 계산
+              
+              if (dataUrlSize > 2) {
+                // 큰 파일은 메타데이터만 저장하고 플래그 추가
+                return {
+                  name: file.name,
+                  type: file.type,
+                  size: file.size,
+                  dataUrl: null, // 큰 파일은 null로 저장
+                  _largeFile: true,
+                  _dataUrlSize: dataUrlSize.toFixed(2) + 'MB'
+                };
+              }
+              
+              // 작은 파일은 전체 저장
+              return file;
+            });
+            
+            return {
+              ...msg,
+              files: optimizedFiles
+            };
+          });
+        }
+        
+        return optimized;
+      };
+      
+      const optimizedMessages = optimizeMessages(newMessages);
       const allMessages = JSON.parse(sessionStorage.getItem(MESSAGES_KEY) || '{}');
-      allMessages[conversationId] = newMessages;
-      sessionStorage.setItem(MESSAGES_KEY, JSON.stringify(allMessages));
+      allMessages[conversationId] = optimizedMessages;
+      
+      // 저장 시도 (크기 체크)
+      const jsonString = JSON.stringify(allMessages);
+      const sizeInMB = (new Blob([jsonString]).size) / 1024 / 1024;
+      
+      if (sizeInMB > 5) {
+        console.warn(`⚠️ 메시지 저장 크기가 큽니다: ${sizeInMB.toFixed(2)}MB. 큰 파일 데이터는 제외됩니다.`);
+        
+        // 큰 파일 데이터를 제거하고 다시 저장
+        const cleanedMessages = optimizeMessages(newMessages);
+        const cleanedJson = JSON.stringify({ ...allMessages, [conversationId]: cleanedMessages });
+        sessionStorage.setItem(MESSAGES_KEY, cleanedJson);
+      } else {
+        sessionStorage.setItem(MESSAGES_KEY, jsonString);
+      }
       
       // 히스토리 업데이트 (제목과 시간)
-      const history = JSON.parse(sessionStorage.getItem(HISTORY_KEY) || '[]');
-      const conversationIndex = history.findIndex(item => item.id === conversationId);
+      let history = JSON.parse(sessionStorage.getItem(HISTORY_KEY) || '[]');
+      let conversationIndex = history.findIndex(item => item.id === conversationId);
       
-      if (conversationIndex !== -1) {
-        // 첫 사용자 메시지로 제목 업데이트
-        const firstUserMessage = Object.values(newMessages)[0]?.find(msg => msg.isUser)?.text;
-        if (firstUserMessage) {
-          history[conversationIndex].title = firstUserMessage.slice(0, 30) + (firstUserMessage.length > 30 ? '...' : '');
+      // 첫 사용자 메시지 찾기 (모든 모델의 메시지에서 찾기)
+      let firstUserMessageObj = null;
+      for (const messageArray of Object.values(newMessages)) {
+        if (Array.isArray(messageArray)) {
+          firstUserMessageObj = messageArray.find(msg => msg && msg.isUser);
+          if (firstUserMessageObj) break;
         }
-        history[conversationIndex].updatedAt = Date.now();
+      }
+      
+      let titleText = '';
+      
+      if (firstUserMessageObj) {
+        if (firstUserMessageObj.text && firstUserMessageObj.text.trim()) {
+          titleText = firstUserMessageObj.text.trim();
+        } else if (firstUserMessageObj.files && firstUserMessageObj.files.length > 0) {
+          // 파일만 있는 경우 파일명으로 제목 설정
+          const fileNames = firstUserMessageObj.files.map(f => f.name || '파일').join(', ');
+          titleText = `📎 ${fileNames}`;
+        }
+      }
+      
+      if (conversationIndex === -1) {
+        // 히스토리에 없으면 새로 추가
+        const newConversation = {
+          id: conversationId,
+          title: titleText ? (titleText.slice(0, 30) + (titleText.length > 30 ? '...' : '')) : '새 대화',
+          updatedAt: Date.now()
+        };
+        history = [newConversation, ...history].slice(0, 100);
         sessionStorage.setItem(HISTORY_KEY, JSON.stringify(history));
         
-        // storage 이벤트 수동 발생
+        // storage 이벤트 수동 발생 (다른 탭용)
         window.dispatchEvent(new StorageEvent('storage', {
           key: HISTORY_KEY,
           newValue: JSON.stringify(history)
         }));
+        // 같은 탭에서도 감지되도록 custom event 발생
+        window.dispatchEvent(new CustomEvent('customstorage', {
+          detail: { key: HISTORY_KEY, newValue: JSON.stringify(history) }
+        }));
+      } else {
+        // 기존 히스토리 업데이트
+        if (titleText) {
+          history[conversationIndex].title = titleText.slice(0, 30) + (titleText.length > 30 ? '...' : '');
+        }
+        history[conversationIndex].updatedAt = Date.now();
+        sessionStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+        
+        // storage 이벤트 수동 발생 (다른 탭용)
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: HISTORY_KEY,
+          newValue: JSON.stringify(history)
+        }));
+        // 같은 탭에서도 감지되도록 custom event 발생
+        window.dispatchEvent(new CustomEvent('customstorage', {
+          detail: { key: HISTORY_KEY, newValue: JSON.stringify(history) }
+        }));
       }
     } catch (error) {
       console.error('메시지 저장 실패:', error);
+      // 오류 발생 시 큰 파일 데이터 없이 재시도
+      try {
+        const allMessages = JSON.parse(sessionStorage.getItem(MESSAGES_KEY) || '{}');
+        const cleanedMessages = {};
+        for (const [modelId, messageArray] of Object.entries(newMessages)) {
+          if (Array.isArray(messageArray)) {
+            cleanedMessages[modelId] = messageArray.map(msg => {
+              if (msg.files && Array.isArray(msg.files)) {
+                return {
+                  ...msg,
+                  files: msg.files.map(f => ({
+                    name: f.name,
+                    type: f.type,
+                    size: f.size,
+                    dataUrl: null,
+                    _largeFile: true
+                  }))
+                };
+              }
+              return msg;
+            });
+          } else {
+            cleanedMessages[modelId] = messageArray;
+          }
+        }
+        allMessages[conversationId] = cleanedMessages;
+        sessionStorage.setItem(MESSAGES_KEY, JSON.stringify(allMessages));
+        console.log('✅ 큰 파일 제외 후 메시지 저장 성공');
+      } catch (retryError) {
+        console.error('재시도 저장도 실패:', retryError);
+      }
     }
   };
 
@@ -351,7 +485,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
           const requestData = {
             message: messageText || '',
             user_id: 'default_user',
-            judge_model: 'GPT-4o-mini',
+            judge_model: 'GPT-5',
             selected_models: selectedModels || []
           };
           
@@ -361,7 +495,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
             const formData = new FormData();
             formData.append('message', messageText || '');
             formData.append('user_id', 'default_user');
-            formData.append('judge_model', 'GPT-4o-mini');
+            formData.append('judge_model', 'GPT-5');
             formData.append('selected_models', JSON.stringify(selectedModels || []));
             
             const firstFile = filesBase64[0] || imagesBase64[0] || videosBase64[0];
@@ -390,6 +524,17 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
           }
 
           const data = response.data;
+          console.log('✅ OPTIMAL 응답 받음:', {
+            status: response.status,
+            dataKeys: Object.keys(data),
+            responseLength: data.response ? data.response.length : 0,
+            responsePreview: data.response ? data.response.substring(0, 100) : 'null',
+            fullData: data
+          });
+          
+          if (!data.response || data.response.trim() === '') {
+            console.error('❌ OPTIMAL 응답이 비어있습니다!', data);
+          }
           
           setMessages(prevMessages => {
             const newMessages = { ...prevMessages };
@@ -406,12 +551,17 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
             console.log('Retrieved similarity data:', similarityData);
 
             const optimalMessage = {
-              text: data.response || "최적화된 응답을 받았습니다.",
+              text: data.response || data.error || "최적화된 응답을 받았습니다.",
               isUser: false,
               timestamp: new Date().toISOString(),
               id: Date.now() + Math.random() + 'optimal',
               similarityData: similarityData
             };
+
+            console.log('✅ OPTIMAL 메시지 생성:', {
+              textLength: optimalMessage.text ? optimalMessage.text.length : 0,
+              textPreview: optimalMessage.text ? optimalMessage.text.substring(0, 100) : 'null'
+            });
 
             newMessages['optimal'] = [...newMessages['optimal'], optimalMessage];
             saveMessages(currentConversationId, newMessages);
@@ -419,10 +569,21 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
           });
 
         } catch (error) {
+          console.error('❌ OPTIMAL 요청 오류:', {
+            error,
+            response: error.response,
+            responseData: error.response?.data,
+            request: error.request,
+            message: error.message
+          });
+          
           let errorText = `죄송합니다. OPTIMAL 모델에서 오류가 발생했습니다.`;
           
           if (error.response) {
             const status = error.response.status;
+            const errorData = error.response.data;
+            console.error('❌ OPTIMAL 서버 응답 오류:', { status, errorData });
+            
             if (status === 401) {
               errorText = `OPTIMAL 모델 API 키가 유효하지 않습니다. 설정을 확인해주세요.`;
             } else if (status === 429) {
@@ -430,12 +591,14 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
             } else if (status >= 500) {
               errorText = `OPTIMAL 모델 서버에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.`;
             } else {
-              errorText = `OPTIMAL 모델에서 오류가 발생했습니다. (오류 코드: ${status})`;
+              errorText = `OPTIMAL 모델에서 오류가 발생했습니다. (오류 코드: ${status})${errorData?.error ? ': ' + errorData.error : ''}`;
             }
           } else if (error.request) {
+            console.error('❌ OPTIMAL 요청 전송 실패:', error.request);
             errorText = `OPTIMAL 모델에 연결할 수 없습니다. 인터넷 연결을 확인해주세요.`;
           } else {
-            errorText = `OPTIMAL 모델 처리 중 예상치 못한 오류가 발생했습니다.`;
+            console.error('❌ OPTIMAL 예상치 못한 오류:', error);
+            errorText = `OPTIMAL 모델 처리 중 예상치 못한 오류가 발생했습니다: ${error.message || '알 수 없는 오류'}`;
           }
           
           const errorMessage = {

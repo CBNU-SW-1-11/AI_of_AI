@@ -11,7 +11,7 @@ const Settingbar = ({ isOpen, onClose }) => {
   
   // 심판 모델 관련 상태
   const [availableJudgeModels, setAvailableJudgeModels] = useState({});
-  const [currentJudgeModel, setCurrentJudgeModel] = useState("GPT-4o-mini");
+  const [currentJudgeModel, setCurrentJudgeModel] = useState("GPT-5");
   const [loadingJudgeModels, setLoadingJudgeModels] = useState(false);
   const languages = [
     "Afrikaans", "Bahasa Indonesia", "Bahasa Melayu", "Català", "Čeština", "Dansk", "Deutsch", 
@@ -35,7 +35,7 @@ const Settingbar = ({ isOpen, onClose }) => {
         if (response.data.success) {
           console.log('📋 사용 가능한 모델:', response.data.models);
           setAvailableJudgeModels(response.data.models);
-          setCurrentJudgeModel(response.data.current_model || "GPT-4o-mini");
+          setCurrentJudgeModel(response.data.current_model || "GPT-5");
           console.log('✅ 심판 모델 설정 완료:', response.data.current_model);
         }
       } catch (error) {

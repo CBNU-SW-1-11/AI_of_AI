@@ -1,10 +1,111 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Send, CirclePlus, Image as ImageIcon, File as FileIcon, X, BarChart3, Video, Brain } from "lucide-react";
+import { Send, CirclePlus, Image as ImageIcon, File as FileIcon, X, BarChart3, Video, Brain, Copy, Check, RotateCw } from "lucide-react";
 import { useChat } from "../context/ChatContext";
 import SimilarityDetailModal from "./SimilarityDetailModal";
 import AIAnalysisModal from "./AIAnalysisModal";
 import { api } from "../utils/api";
 import { useNavigate } from "react-router-dom";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+// 코드 복사 컴포넌트
+const CodeBlock = ({ children, className, ...props }) => {
+  const [copied, setCopied] = useState(false);
+  const codeRef = useRef(null);
+  
+  const codeString = typeof children === 'string' ? children : 
+    (Array.isArray(children) ? children.join('') : String(children));
+  
+  const handleCopy = async (e) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(codeString);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('복사 실패:', err);
+    }
+  };
+  
+  const isInline = !className || !className.includes('language-');
+  
+  if (isInline) {
+    return <code className={className} {...props}>{children}</code>;
+  }
+  
+  // 언어 이름 추출 (예: "language-python" -> "python")
+  const languageMatch = className?.match(/language-(\w+)/);
+  const language = languageMatch ? languageMatch[1] : '';
+  
+  return (
+    <div className="relative group" style={{ marginBottom: '1rem' }}>
+      <div className="relative">
+        {/* 언어 레이블 (왼쪽 상단) */}
+        {language && (
+          <div className="absolute top-2 left-2 px-2 py-1 text-xs font-semibold text-gray-900 z-10">
+            {language}
+          </div>
+        )}
+        {/* 복사 버튼 (오른쪽 상단) */}
+        <button
+          onClick={handleCopy}
+          className="absolute top-2 right-2 p-1.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors z-10"
+          title={copied ? "복사됨!" : "코드 복사"}
+        >
+          {copied ? (
+            <Check size={14} className="text-green-600" />
+          ) : (
+            <Copy size={14} />
+          )}
+        </button>
+        <pre 
+          className={className} 
+          {...props} 
+          ref={codeRef} 
+          style={{ 
+            paddingTop: language ? '2.5rem' : '1rem',
+            backgroundColor: '#f3f4f6',
+            color: '#1f2937'
+          }}
+        >
+          <code style={{ color: '#1f2937' }}>{children}</code>
+        </pre>
+      </div>
+    </div>
+  );
+};
+
+// 전체 복사 컴포넌트 (아이콘만)
+const CopyAllButton = ({ content }) => {
+  const [copied, setCopied] = useState(false);
+  
+  const handleCopyAll = async (e) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('전체 복사 실패:', err);
+    }
+  };
+  
+  if (!content || content.trim().length === 0) return null;
+  
+  return (
+    <button
+      onClick={handleCopyAll}
+      className="flex items-center justify-center p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors mt-2"
+      title={copied ? "복사됨!" : "전체 복사"}
+    >
+      {copied ? (
+        <Check size={16} className="text-green-600" />
+      ) : (
+        <Copy size={16} className="text-gray-600" />
+      )}
+    </button>
+  );
+};
 
 // Optimal Response Renderer Component
 const OptimalResponseRenderer = ({ content }) => {
@@ -147,7 +248,19 @@ const OptimalResponseRenderer = ({ content }) => {
             최적 답변
           </h3>
           <div className="section-content">
-            {sections.integrated}
+            <ReactMarkdown 
+              remarkPlugins={[remarkGfm]}
+              components={{
+                code: CodeBlock,
+                pre: ({ children, ...props }) => {
+                  // pre 태그는 CodeBlock에서 처리하므로 여기서는 그대로 전달
+                  return <pre {...props}>{children}</pre>;
+                }
+              }}
+            >
+              {sections.integrated}
+            </ReactMarkdown>
+            <CopyAllButton content={sections.integrated} />
           </div>
         </div>
       )}
@@ -161,7 +274,16 @@ const OptimalResponseRenderer = ({ content }) => {
             최종 추천
           </h3>
           <div className="section-content">
-            {sections.recommendation}
+            <ReactMarkdown 
+              remarkPlugins={[remarkGfm]}
+              components={{
+                code: CodeBlock,
+                pre: ({ children, ...props }) => <pre {...props}>{children}</pre>
+              }}
+            >
+              {sections.recommendation}
+            </ReactMarkdown>
+            <CopyAllButton content={sections.recommendation} />
           </div>
         </div>
       )}
@@ -172,7 +294,16 @@ const OptimalResponseRenderer = ({ content }) => {
             추가 인사이트
           </h3>
           <div className="section-content">
-            {sections.insights}
+            <ReactMarkdown 
+              remarkPlugins={[remarkGfm]}
+              components={{
+                code: CodeBlock,
+                pre: ({ children, ...props }) => <pre {...props}>{children}</pre>
+              }}
+            >
+              {sections.insights}
+            </ReactMarkdown>
+            <CopyAllButton content={sections.insights} />
           </div>
         </div>
       )}
@@ -480,6 +611,159 @@ const ChatBox = () => {
           color: #374151;
           line-height: 1.6;
           font-size: 0.95rem;
+        }
+        /* 마크다운 스타일 */
+        .section-content h1, .section-content h2, .section-content h3, .section-content h4, .section-content h5, .section-content h6 {
+          margin-top: 1.5rem;
+          margin-bottom: 0.75rem;
+          font-weight: 600;
+          line-height: 1.25;
+        }
+        .section-content h1 { font-size: 1.5rem; }
+        .section-content h2 { font-size: 1.25rem; }
+        .section-content h3 { font-size: 1.125rem; }
+        .section-content p {
+          margin-bottom: 1rem;
+        }
+        .section-content ul, .section-content ol {
+          margin-bottom: 1rem;
+          padding-left: 1.5rem;
+        }
+        .section-content li {
+          margin-bottom: 0.5rem;
+        }
+        .section-content code {
+          background-color: #f3f4f6;
+          padding: 0.125rem 0.375rem;
+          border-radius: 0.25rem;
+          font-size: 0.875em;
+          font-family: 'Courier New', monospace;
+        }
+        .section-content pre {
+          background-color: #f3f4f6;
+          color: #1f2937;
+          padding: 1rem;
+          border-radius: 0.5rem;
+          overflow-x: auto;
+          margin-bottom: 1rem;
+          position: relative;
+        }
+        .section-content pre code {
+          background-color: transparent;
+          padding: 0;
+          color: inherit;
+        }
+        .section-content code {
+          background-color: #f3f4f6;
+          padding: 0.125rem 0.375rem;
+          border-radius: 0.25rem;
+          font-size: 0.875em;
+          font-family: 'Courier New', monospace;
+        }
+        .section-content pre code {
+          background-color: transparent;
+          padding: 0;
+          color: #1f2937;
+        }
+        .section-content blockquote {
+          border-left: 4px solid #d1d5db;
+          padding-left: 1rem;
+          margin-left: 0;
+          margin-bottom: 1rem;
+          color: #6b7280;
+        }
+        .section-content strong {
+          font-weight: 700;
+          color: #1f2937;
+        }
+        .section-content strong * {
+          font-weight: inherit;
+        }
+        .section-content em {
+          font-style: italic;
+        }
+        .section-content a {
+          color: #2563eb;
+          text-decoration: underline;
+        }
+        .section-content hr {
+          border: none;
+          border-top: 1px solid #e5e7eb;
+          margin: 1.5rem 0;
+        }
+        .aiofai-bot-message h1, .aiofai-bot-message h2, .aiofai-bot-message h3,
+        .aiofai-bot-message h4, .aiofai-bot-message h5, .aiofai-bot-message h6 {
+          margin-top: 1.5rem;
+          margin-bottom: 0.75rem;
+          font-weight: 600;
+          line-height: 1.25;
+        }
+        .aiofai-bot-message h1 { font-size: 1.5rem; }
+        .aiofai-bot-message h2 { font-size: 1.25rem; }
+        .aiofai-bot-message h3 { font-size: 1.125rem; }
+        .aiofai-bot-message p {
+          margin-bottom: 1rem;
+        }
+        .aiofai-bot-message ul, .aiofai-bot-message ol {
+          margin-bottom: 1rem;
+          padding-left: 1.5rem;
+        }
+        .aiofai-bot-message li {
+          margin-bottom: 0.5rem;
+        }
+        .aiofai-bot-message code {
+          background-color: #f3f4f6;
+          padding: 0.125rem 0.375rem;
+          border-radius: 0.25rem;
+          font-size: 0.875em;
+          font-family: 'Courier New', monospace;
+        }
+        .aiofai-bot-message pre {
+          background-color: #f3f4f6;
+          color: #1f2937;
+          padding: 1rem;
+          border-radius: 0.5rem;
+          overflow-x: auto;
+          margin-bottom: 1rem;
+          position: relative;
+        }
+        .aiofai-bot-message code {
+          background-color: #f3f4f6;
+          padding: 0.125rem 0.375rem;
+          border-radius: 0.25rem;
+          font-size: 0.875em;
+          font-family: 'Courier New', monospace;
+        }
+        .aiofai-bot-message pre code {
+          background-color: transparent;
+          padding: 0;
+          color: #1f2937;
+        }
+        .aiofai-bot-message blockquote {
+          border-left: 4px solid #d1d5db;
+          padding-left: 1rem;
+          margin-left: 0;
+          margin-bottom: 1rem;
+          color: #6b7280;
+        }
+        .aiofai-bot-message strong {
+          font-weight: 700;
+          color: #1f2937;
+        }
+        .aiofai-bot-message strong * {
+          font-weight: inherit;
+        }
+        .aiofai-bot-message em {
+          font-style: italic;
+        }
+        .aiofai-bot-message a {
+          color: #2563eb;
+          text-decoration: underline;
+        }
+        .aiofai-bot-message hr {
+          border: none;
+          border-top: 1px solid #e5e7eb;
+          margin: 1.5rem 0;
         }
         .analysis-grid {
           display: flex;
@@ -790,37 +1074,99 @@ const ChatBox = () => {
                   <div key={`${modelId}-${index}`} className={`flex ${isUser ? "justify-end" : "justify-start"} mb-4 flex-col ${isUser ? "items-end" : "items-start"}`}>
                     {message.files && message.files.length > 0 && (
                       <div className="flex flex-wrap gap-2 mb-2 max-w-[85%]">
-                        {message.files.map((file, fileIndex) => (
-                          <div key={fileIndex} className="relative">
-                            {file.type && file.type.startsWith('image/') ? (
-                              <div>
-                                <img
-                                  src={file.dataUrl}
-                                  alt={file.name || 'image'}
-                                  className="rounded-lg border border-gray-300 object-contain"
-                                  style={{ maxWidth: '300px', maxHeight: '300px' }}
-                                  loading="eager"
-                                  onError={(e) => {
-                                    e.target.style.display = 'none';
-                                    console.warn('Image load failed:', file.name);
-                                  }}
-                                />
-                                <div className="text-xs text-gray-500 mt-1 text-center">
-                                  {file.name || '이미지'}
+                        {message.files.map((file, fileIndex) => {
+                          const handleFileDownload = () => {
+                            if (!file.dataUrl) return;
+                            
+                            try {
+                              // Base64 데이터를 Blob으로 변환
+                              const base64Data = file.dataUrl.split(',')[1] || file.dataUrl;
+                              const byteCharacters = atob(base64Data);
+                              const byteNumbers = new Array(byteCharacters.length);
+                              for (let i = 0; i < byteCharacters.length; i++) {
+                                byteNumbers[i] = byteCharacters.charCodeAt(i);
+                              }
+                              const byteArray = new Uint8Array(byteNumbers);
+                              const blob = new Blob([byteArray], { type: file.type || 'application/octet-stream' });
+                              
+                              // 다운로드 링크 생성
+                              const url = URL.createObjectURL(blob);
+                              const link = document.createElement('a');
+                              link.href = url;
+                              link.download = file.name || 'download';
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                              URL.revokeObjectURL(url);
+                            } catch (error) {
+                              console.error('파일 다운로드 실패:', error);
+                              alert('파일 다운로드에 실패했습니다.');
+                            }
+                          };
+                          
+                          return (
+                            <div key={fileIndex} className="relative">
+                              {file.type && file.type.startsWith('image/') ? (
+                                <div>
+                                  {file.dataUrl ? (
+                                    <img
+                                      src={file.dataUrl}
+                                      alt={file.name || 'image'}
+                                      className="rounded-lg border border-gray-300 object-contain cursor-pointer"
+                                      style={{ maxWidth: '300px', maxHeight: '300px' }}
+                                      loading="eager"
+                                      onClick={handleFileDownload}
+                                      title="클릭하여 원본 파일 다운로드"
+                                      onError={(e) => {
+                                        e.target.style.display = 'none';
+                                        console.warn('Image load failed:', file.name);
+                                      }}
+                                    />
+                                  ) : (
+                                    <div className="rounded-lg border border-gray-300 bg-gray-50 p-8 text-center">
+                                      <div className="text-gray-400 text-4xl mb-2">📷</div>
+                                      <div className="text-xs text-gray-500">{file.name || '이미지'}</div>
+                                      {file._largeFile && (
+                                        <div className="text-xs text-gray-400 mt-1">(큰 파일로 저장되지 않음)</div>
+                                      )}
+                                    </div>
+                                  )}
+                                  <div className="text-xs text-gray-500 mt-1 text-center">
+                                    {file.name || '이미지'}
+                                  </div>
                                 </div>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-2 p-3 bg-gray-100 rounded-lg border border-gray-300">
-                                <div className="text-gray-600 text-2xl">
-                                  📄
+                              ) : (
+                                <div 
+                                  className="flex items-center gap-2 p-3 bg-gray-100 rounded-lg border border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors"
+                                  onClick={file.dataUrl ? handleFileDownload : undefined}
+                                  title={file.dataUrl ? "클릭하여 원본 파일 다운로드" : file._largeFile ? "큰 파일로 인해 저장되지 않았습니다" : "파일"}
+                                >
+                                  <div className="text-gray-600 text-2xl">
+                                    📄
+                                  </div>
+                                  <span className="text-sm text-gray-700 font-medium">
+                                    {file.name || '파일'}
+                                  </span>
+                                  {file._largeFile && (
+                                    <span className="text-xs text-gray-500 ml-1">
+                                      (저장되지 않음)
+                                    </span>
+                                  )}
+                                  {file.dataUrl && (
+                                    <svg 
+                                      className="w-4 h-4 text-gray-500 ml-1" 
+                                      fill="none" 
+                                      stroke="currentColor" 
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                  )}
                                 </div>
-                                <span className="text-sm text-gray-700">
-                                  {file.name || '파일'}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        ))}
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                     
@@ -969,7 +1315,50 @@ const ChatBox = () => {
                             })()}
                           </div>
                         ) : (
-                          <div>{message.text}</div>
+                          <div>
+                            <ReactMarkdown 
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                code: CodeBlock,
+                                pre: ({ children, ...props }) => <pre {...props}>{children}</pre>
+                              }}
+                            >
+                              {message.text}
+                            </ReactMarkdown>
+                            {!message.isUser && !message.isError && <CopyAllButton content={message.text} />}
+                            {message.isError && (
+                              <button
+                                onClick={() => {
+                                  // 오류 발생 시 마지막 사용자 메시지 찾기
+                                  const userMessages = messages[modelId]?.filter(msg => msg.isUser) || [];
+                                  const lastUserMessage = userMessages[userMessages.length - 1];
+                                  if (lastUserMessage) {
+                                    // 마지막 사용자 메시지 재전송
+                                    const messageText = lastUserMessage.text || '';
+                                    const files = lastUserMessage.files || [];
+                                    
+                                    // 파일 데이터 준비
+                                    const filesBase64 = files.map(f => ({
+                                      name: f.name,
+                                      type: f.type,
+                                      size: f.size,
+                                      dataUrl: f.dataUrl
+                                    }));
+                                    
+                                    sendMessage(messageText, null, {
+                                      filesBase64: filesBase64.filter(f => f.dataUrl),
+                                      imagesBase64: filesBase64.filter(f => f.type?.startsWith('image/')),
+                                      videosBase64: filesBase64.filter(f => f.type?.startsWith('video/'))
+                                    });
+                                  }
+                                }}
+                                className="flex items-center justify-center p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors mt-2"
+                                title="질문 재전송"
+                              >
+                                <RotateCw size={18} className="text-gray-600" />
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     )}
