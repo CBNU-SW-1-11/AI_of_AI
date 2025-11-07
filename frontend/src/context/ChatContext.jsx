@@ -1,6 +1,6 @@
 // context/ChatContext.jsx
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../utils/api';
 
 const ChatContext = createContext();
@@ -10,6 +10,7 @@ const HISTORY_KEY = "aiofai:conversations";
 
 export const ChatProvider = ({ children, initialModels = [] }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [selectedModels, setSelectedModels] = useState(initialModels);
   const [messages, setMessages] = useState({});
   const [isLoading, setIsLoading] = useState(false);
@@ -24,7 +25,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
     setCurrentConversationId(cid);
   }, [location.search]);
 
-  // 대화 ID가 변경되면 해당 대화의 메시지 불러오기
+  // 대화 ID가 변경되면 해당 대화의 메시지 및 AI 모델 불러오기
   useEffect(() => {
     if (!currentConversationId) {
       setMessages({});
@@ -32,9 +33,27 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
     }
 
     try {
+      // 메시지 불러오기
       const allMessages = JSON.parse(sessionStorage.getItem(MESSAGES_KEY) || '{}');
       const conversationMessages = allMessages[currentConversationId] || {};
+      console.log('📥 메시지 불러오기:', {
+        conversationId: currentConversationId,
+        messageKeys: Object.keys(conversationMessages),
+        messageCounts: Object.entries(conversationMessages).reduce((acc, [key, val]) => {
+          acc[key] = Array.isArray(val) ? val.length : 'not array';
+          return acc;
+        }, {})
+      });
       setMessages(conversationMessages);
+
+      // 해당 대화의 AI 모델 복원
+      const history = JSON.parse(sessionStorage.getItem(HISTORY_KEY) || '[]');
+      const currentConversation = history.find(conv => conv.id === currentConversationId);
+      
+      if (currentConversation && currentConversation.selectedModels) {
+        console.log('🔄 대화 전환: AI 모델 복원', currentConversation.selectedModels);
+        setSelectedModels(currentConversation.selectedModels);
+      }
     } catch (error) {
       console.error('메시지 불러오기 실패:', error);
       setMessages({});
@@ -44,6 +63,15 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
   // 메시지 저장 함수
   const saveMessages = (conversationId, newMessages) => {
     if (!conversationId) return;
+    
+    console.log('💾 메시지 저장 시도:', {
+      conversationId,
+      messageKeys: Object.keys(newMessages),
+      messageCounts: Object.entries(newMessages).reduce((acc, [key, val]) => {
+        acc[key] = Array.isArray(val) ? val.length : 'not array';
+        return acc;
+      }, {})
+    });
     
     try {
       // 파일 데이터 최적화: 큰 파일은 메타데이터만 저장
@@ -187,11 +215,19 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
           detail: { key: HISTORY_KEY, newValue: JSON.stringify(history) }
         }));
       } else {
-        // 기존 히스토리 업데이트
-        if (titleText) {
-          history[conversationIndex].title = titleText.slice(0, 30) + (titleText.length > 30 ? '...' : '');
+        // 기존 히스토리 업데이트 (순서 변경: 맨 위로 이동)
+        const existingConversation = history[conversationIndex];
+        
+        // 제목이 명시적으로 설정되지 않았고 "새 대화"인 경우에만 첫 메시지로 업데이트
+        if (titleText && !existingConversation._titleSet && existingConversation.title === "새 대화") {
+          existingConversation.title = titleText.slice(0, 30) + (titleText.length > 30 ? '...' : '');
         }
-        history[conversationIndex].updatedAt = Date.now();
+        existingConversation.updatedAt = Date.now();
+        
+        // 배열에서 제거하고 맨 앞에 추가
+        history.splice(conversationIndex, 1);
+        history.unshift(existingConversation);
+        
         sessionStorage.setItem(HISTORY_KEY, JSON.stringify(history));
         
         // storage 이벤트 수동 발생 (다른 탭용)
@@ -246,6 +282,41 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
     }
   }, [initialModels]);
 
+  // AI 모델이 변경되면 히스토리에 저장 (updatedAt은 변경하지 않음 - 순서 유지)
+  // 단, 모델 변경 감지를 위해 임시로만 저장하고, 실제 메시지 전송 시 새 대화로 분리
+  useEffect(() => {
+    if (!currentConversationId || selectedModels.length === 0) return;
+
+    try {
+      const history = JSON.parse(sessionStorage.getItem(HISTORY_KEY) || '[]');
+      const currentConv = history.find(conv => conv.id === currentConversationId);
+      
+      // 현재 대화가 히스토리에 있고, 모델이 설정되어 있지 않은 경우에만 업데이트
+      // (새로 생성된 대화방의 경우)
+      if (currentConv && (!currentConv.selectedModels || currentConv.selectedModels.length === 0)) {
+        const updatedHistory = history.map(conv => {
+          if (conv.id === currentConversationId) {
+            return {
+              ...conv,
+              selectedModels: selectedModels
+            };
+          }
+          return conv;
+        });
+        
+        sessionStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
+        
+        // storage 이벤트 발생
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: HISTORY_KEY,
+          newValue: JSON.stringify(updatedHistory)
+        }));
+      }
+    } catch (error) {
+      console.error('모델 선택 저장 실패:', error);
+    }
+  }, [selectedModels, currentConversationId]);
+
   useEffect(() => {
     const initializeChat = async () => {
       try {
@@ -295,6 +366,167 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
       return;
     }
 
+    // 🔄 AI 모델 변경 감지: 히스토리의 모델과 현재 선택된 모델 비교
+    let actualConversationId = currentConversationId;
+    let newlyAddedModels = []; // 새로 추가된 모델 추적
+    let conversationContext = null; // 이전 대화 맥락
+    
+    try {
+      const history = JSON.parse(sessionStorage.getItem(HISTORY_KEY) || '[]');
+      const currentConversation = history.find(conv => conv.id === currentConversationId);
+      
+      if (currentConversation && currentConversation.selectedModels && currentConversation.selectedModels.length > 0) {
+        // 배열을 정렬하여 비교 (순서 무관)
+        const historyModels = [...currentConversation.selectedModels].sort();
+        const currentModels = [...selectedModels].sort();
+        
+        // 모델이 변경되었는지 확인
+        const modelsChanged = JSON.stringify(historyModels) !== JSON.stringify(currentModels);
+        
+        if (modelsChanged) {
+          console.log('🔄 AI 모델 변경 감지! 새 대화 생성');
+          console.log('이전 모델:', historyModels);
+          console.log('현재 모델:', currentModels);
+          
+          // 새로 추가된 모델 찾기
+          newlyAddedModels = currentModels.filter(model => !historyModels.includes(model));
+          console.log('🆕 새로 추가된 모델:', newlyAddedModels);
+          
+          // 기존 메시지 가져오기
+          const allMessages = JSON.parse(sessionStorage.getItem(MESSAGES_KEY) || '{}');
+          const oldMessages = allMessages[currentConversationId] || {};
+          
+          // 이전 대화의 전체 히스토리 생성 (질문 + 답변)
+          const conversationHistory = [];
+          
+          // 변경되지 않은 모델 중 하나를 선택하여 전체 대화 흐름 추출
+          const referenceModel = historyModels.find(modelId => 
+            currentModels.includes(modelId) && oldMessages[modelId]
+          );
+          
+          if (referenceModel && oldMessages[referenceModel]) {
+            const referenceMessages = oldMessages[referenceModel];
+            
+            referenceMessages.forEach(msg => {
+              if (msg.isUser) {
+                // 사용자 질문 추가
+                conversationHistory.push({
+                  role: 'user',
+                  text: msg.text,
+                  timestamp: msg.timestamp
+                });
+              } else {
+                // AI 답변 추가
+                conversationHistory.push({
+                  role: 'assistant',
+                  text: msg.text,
+                  timestamp: msg.timestamp
+                });
+              }
+            });
+          }
+          
+          // 맥락 텍스트 생성 (최근 대화 포함)
+          if (conversationHistory.length > 0) {
+            // 최근 10개 메시지만 (너무 길어지지 않도록)
+            const recentHistory = conversationHistory.slice(-10);
+            
+            conversationContext = "=== 이전 대화 내역 ===\n\n";
+            
+            recentHistory.forEach((msg, idx) => {
+              if (msg.role === 'user') {
+                conversationContext += `[사용자 질문 ${Math.floor(idx/2) + 1}]\n${msg.text}\n\n`;
+              } else {
+                conversationContext += `[AI 답변]\n${msg.text.substring(0, 500)}${msg.text.length > 500 ? '...(이하 생략)' : ''}\n\n`;
+              }
+            });
+            
+            conversationContext += "===================\n\n위 대화 내역을 참고하여, 이어지는 질문에 답변해주세요.\n\n현재 질문:\n";
+            
+            console.log('📝 생성된 대화 맥락:', {
+              historyLength: conversationHistory.length,
+              recentHistoryLength: recentHistory.length,
+              referenceModel,
+              contextPreview: conversationContext.substring(0, 300) + '...'
+            });
+          }
+          
+          // 새 대화 ID 생성
+          const newId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+          
+          // 현재 메시지를 제목으로 설정
+          let newTitle = "새 대화";
+          if (messageText && messageText.trim()) {
+            newTitle = messageText.trim().slice(0, 30) + (messageText.trim().length > 30 ? '...' : '');
+          } else if (hasFiles) {
+            const fileNames = [...filesBase64, ...imagesBase64, ...videosBase64]
+              .map(f => f.name || '파일').slice(0, 2).join(', ');
+            newTitle = `📎 ${fileNames}`;
+          }
+          
+          const newConversation = {
+            id: newId,
+            title: newTitle,
+            updatedAt: Date.now(),
+            selectedModels: selectedModels,
+            _titleSet: true // 제목이 명시적으로 설정되었음을 표시
+          };
+          
+          // 변경되지 않은 모델들과 optimal의 메시지만 복사
+          const newMessages = {};
+          const unchangedModels = historyModels.filter(model => currentModels.includes(model));
+          
+          // 공통 모델의 메시지 복사
+          unchangedModels.forEach(modelId => {
+            if (oldMessages[modelId]) {
+              newMessages[modelId] = [...oldMessages[modelId]];
+            }
+          });
+          
+          // optimal 메시지도 복사 (최적화 답변 유지)
+          if (oldMessages['optimal']) {
+            newMessages['optimal'] = [...oldMessages['optimal']];
+          }
+          
+          // 유사도 데이터도 복사
+          if (oldMessages['_similarityData']) {
+            newMessages['_similarityData'] = { ...oldMessages['_similarityData'] };
+          }
+          
+          console.log('✅ 복사된 메시지:', {
+            unchangedModels,
+            newMessagesKeys: Object.keys(newMessages)
+          });
+          
+          // 새 대화의 메시지 저장
+          allMessages[newId] = newMessages;
+          sessionStorage.setItem(MESSAGES_KEY, JSON.stringify(allMessages));
+          
+          // 히스토리에 새 대화 추가
+          const updatedHistory = [newConversation, ...history].slice(0, 100);
+          sessionStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
+          
+          // storage 이벤트 발생
+          window.dispatchEvent(new StorageEvent('storage', {
+            key: HISTORY_KEY,
+            newValue: JSON.stringify(updatedHistory)
+          }));
+          
+          // 새 대화로 전환
+          setCurrentConversationId(newId);
+          setMessages(newMessages);
+          
+          // URL 업데이트 및 페이지 이동
+          navigate(`/?cid=${newId}`, { replace: true });
+          
+          // 새 대화 ID로 메시지 전송 계속
+          actualConversationId = newId;
+        }
+      }
+    } catch (error) {
+      console.error('모델 변경 감지 실패:', error);
+    }
+
     const userMessage = {
       text: messageText?.trim() || '',
       isUser: true,
@@ -320,7 +552,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
         }
       });
       
-      saveMessages(currentConversationId, newMessages);
+      saveMessages(actualConversationId, newMessages);
       return newMessages;
     });
 
@@ -340,7 +572,18 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
           }));
           
           const formData = new FormData();
-          formData.append('message', messageText || '');
+          
+          // 새로 추가된 모델인 경우 이전 대화 맥락 포함
+          const isNewModel = newlyAddedModels.includes(modelId);
+          const finalMessage = isNewModel && conversationContext 
+            ? conversationContext + (messageText || '')
+            : (messageText || '');
+          
+          formData.append('message', finalMessage);
+          
+          if (isNewModel && conversationContext) {
+            console.log(`📨 ${modelId}에게 대화 맥락 전달:`, finalMessage.substring(0, 200) + '...');
+          }
           
           if (hasFiles) {
             const firstFile = filesBase64[0] || imagesBase64[0] || videosBase64[0];
@@ -385,8 +628,15 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
               newMessages[modelId] = [];
             }
             newMessages[modelId] = [...newMessages[modelId], aiMessage];
-            saveMessages(currentConversationId, newMessages);
+            saveMessages(actualConversationId, newMessages);
             return newMessages;
+          });
+
+          // 해당 모델의 로딩 상태 제거
+          setLoadingModels(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(modelId);
+            return newSet;
           });
 
           return aiResponse;
@@ -430,8 +680,15 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
               newMessages[modelId] = [];
             }
             newMessages[modelId] = [...newMessages[modelId], errorMessage];
-            saveMessages(currentConversationId, newMessages);
+            saveMessages(actualConversationId, newMessages);
             return newMessages;
+          });
+          
+          // 에러 발생 시에도 로딩 상태 제거
+          setLoadingModels(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(modelId);
+            return newSet;
           });
           
           return null;
@@ -497,7 +754,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
                   }
                   newMessages['_similarityData'][userMessage.id] = analysisResult;
                   console.log('Similarity data saved. Current _similarityData:', newMessages['_similarityData']);
-                  saveMessages(currentConversationId, newMessages);
+                  saveMessages(actualConversationId, newMessages);
                   return newMessages;
                 });
               } catch (error) {
@@ -605,8 +862,15 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
             });
 
             newMessages['optimal'] = [...newMessages['optimal'], optimalMessage];
-            saveMessages(currentConversationId, newMessages);
+            saveMessages(actualConversationId, newMessages);
             return newMessages;
+          });
+
+          // optimal 로딩 상태 제거
+          setLoadingModels(prev => {
+            const newSet = new Set(prev);
+            newSet.delete('optimal');
+            return newSet;
           });
 
         } catch (error) {
@@ -656,8 +920,15 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
               newMessages['optimal'] = [];
             }
             newMessages['optimal'] = [...newMessages['optimal'], errorMessage];
-            saveMessages(currentConversationId, newMessages);
+            saveMessages(actualConversationId, newMessages);
             return newMessages;
+          });
+
+          // optimal 에러 시에도 로딩 상태 제거
+          setLoadingModels(prev => {
+            const newSet = new Set(prev);
+            newSet.delete('optimal');
+            return newSet;
           });
         }
       }

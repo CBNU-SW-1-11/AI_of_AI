@@ -26,36 +26,14 @@ const MainPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // 페이지 로드 시 대화 ID 확인 및 생성
+  // 페이지 로드 시 대화 ID 확인 (App.js에서 이미 생성되므로 여기서는 생성하지 않음)
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const cid = params.get('cid');
     
+    // cid가 없으면 루트(/)로 리다이렉트 (WelcomePage로 돌아감)
     if (!cid) {
-      // 대화 ID가 없으면 새 대화 생성
-      const newId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-      const newConversation = {
-        id: newId,
-        title: "새 대화",
-        updatedAt: Date.now()
-      };
-      
-      try {
-        const history = JSON.parse(sessionStorage.getItem(HISTORY_KEY) || '[]');
-        const updatedHistory = [newConversation, ...history].slice(0, 100);
-        sessionStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
-        
-        // storage 이벤트 발생
-        window.dispatchEvent(new StorageEvent('storage', {
-          key: HISTORY_KEY,
-          newValue: JSON.stringify(updatedHistory)
-        }));
-      } catch (error) {
-        console.error('히스토리 저장 실패:', error);
-      }
-      
-      // replace: true로 설정하여 뒤로가기 시 이전 페이지로
-      navigate(`/?cid=${newId}`, { replace: true });
+      navigate('/', { replace: true });
     }
   }, [location.search, navigate]);
 

@@ -75,6 +75,68 @@ const CodeBlock = ({ children, className, ...props }) => {
   );
 };
 
+// 반응형 표 컴포넌트
+const ResponsiveTable = ({ children, ...props }) => {
+  return (
+    <div style={{ 
+      width: '100%', 
+      overflowX: 'auto', 
+      marginBottom: '1rem',
+      borderRadius: '8px',
+      border: '1px solid #e5e7eb'
+    }}>
+      <table {...props} style={{ 
+        width: '100%', 
+        borderCollapse: 'collapse',
+        fontSize: '0.875rem',
+        minWidth: 'max-content'
+      }}>
+        {children}
+      </table>
+    </div>
+  );
+};
+
+const TableHead = ({ children, ...props }) => (
+  <thead {...props} style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid #e5e7eb' }}>
+    {children}
+  </thead>
+);
+
+const TableBody = ({ children, ...props }) => (
+  <tbody {...props}>
+    {children}
+  </tbody>
+);
+
+const TableRow = ({ children, ...props }) => (
+  <tr {...props} style={{ borderBottom: '1px solid #e5e7eb' }}>
+    {children}
+  </tr>
+);
+
+const TableHeader = ({ children, ...props }) => (
+  <th {...props} style={{ 
+    padding: '12px 16px', 
+    textAlign: 'left', 
+    fontWeight: '600',
+    color: '#374151',
+    whiteSpace: 'nowrap'
+  }}>
+    {children}
+  </th>
+);
+
+const TableCell = ({ children, ...props }) => (
+  <td {...props} style={{ 
+    padding: '12px 16px', 
+    color: '#6b7280',
+    verticalAlign: 'top'
+  }}>
+    {children}
+  </td>
+);
+
 // 전체 복사 컴포넌트 (아이콘만)
 const CopyAllButton = ({ content }) => {
   const [copied, setCopied] = useState(false);
@@ -255,7 +317,13 @@ const OptimalResponseRenderer = ({ content }) => {
                 pre: ({ children, ...props }) => {
                   // pre 태그는 CodeBlock에서 처리하므로 여기서는 그대로 전달
                   return <pre {...props}>{children}</pre>;
-                }
+                },
+                table: ResponsiveTable,
+                thead: TableHead,
+                tbody: TableBody,
+                tr: TableRow,
+                th: TableHeader,
+                td: TableCell
               }}
             >
               {sections.integrated}
@@ -278,7 +346,13 @@ const OptimalResponseRenderer = ({ content }) => {
               remarkPlugins={[remarkGfm]}
               components={{
                 code: CodeBlock,
-                pre: ({ children, ...props }) => <pre {...props}>{children}</pre>
+                pre: ({ children, ...props }) => <pre {...props}>{children}</pre>,
+                table: ResponsiveTable,
+                thead: TableHead,
+                tbody: TableBody,
+                tr: TableRow,
+                th: TableHeader,
+                td: TableCell
               }}
             >
               {sections.recommendation}
@@ -298,7 +372,13 @@ const OptimalResponseRenderer = ({ content }) => {
               remarkPlugins={[remarkGfm]}
               components={{
                 code: CodeBlock,
-                pre: ({ children, ...props }) => <pre {...props}>{children}</pre>
+                pre: ({ children, ...props }) => <pre {...props}>{children}</pre>,
+                table: ResponsiveTable,
+                thead: TableHead,
+                tbody: TableBody,
+                tr: TableRow,
+                th: TableHeader,
+                td: TableCell
               }}
             >
               {sections.insights}
@@ -322,6 +402,7 @@ const ChatBox = () => {
     messages = {},
     sendMessage,
     isLoading,
+    loadingModels = new Set(),
     selectedModels = [],
     currentConversationId
   } = useChat() || {};
@@ -1334,7 +1415,13 @@ const ChatBox = () => {
                               remarkPlugins={[remarkGfm]}
                               components={{
                                 code: CodeBlock,
-                                pre: ({ children, ...props }) => <pre {...props}>{children}</pre>
+                                pre: ({ children, ...props }) => <pre {...props}>{children}</pre>,
+                                table: ResponsiveTable,
+                                thead: TableHead,
+                                tbody: TableBody,
+                                tr: TableRow,
+                                th: TableHeader,
+                                td: TableCell
                               }}
                             >
                               {message.text}
@@ -1380,7 +1467,7 @@ const ChatBox = () => {
                 );
               })}
 
-              {isLoading && (
+              {loadingModels.has(modelId) && (
                 <div className="flex justify-start mb-4">
                   <div className="bg-gray-100 text-gray-800 p-4 rounded-2xl">
                     {loadingText || "입력 중..."}

@@ -100,7 +100,8 @@ const Sidebar = () => {
     const newItem = { 
       id, 
       title: "새 대화", 
-      updatedAt: Date.now() 
+      updatedAt: Date.now(),
+      selectedModels: [] // 빈 배열로 초기화
     };
     
     const existingItems = [...items];
@@ -171,7 +172,8 @@ const Sidebar = () => {
       const newItem = { 
         id: newId, 
         title: "새 대화", 
-        updatedAt: Date.now() 
+        updatedAt: Date.now(),
+        selectedModels: [] // 빈 배열로 초기화
       };
       const next = [newItem, ...updatedItems].slice(0, 100);
       writeItems(next);
@@ -292,7 +294,7 @@ const Sidebar = () => {
                   </div>
                 )}
 
-                <div className="flex items-center justify-between pr-6">
+                <div className="flex flex-col w-full pr-6">
                   {isEditing ? (
                     <input
                       ref={inputRef}
@@ -312,23 +314,43 @@ const Sidebar = () => {
                       style={{ color: "#5d7c5b", fontSize: "0.95rem", fontWeight: 600 }}
                     />
                   ) : (
-                    <h3
-                      className="font-medium text-sm mb-1 truncate transition-colors duration-300"
-                      style={{ color: "#5d7c5b", fontSize: "0.95rem", fontWeight: 600, maxWidth: "80%" }}
-                    >
-                      {it.title || "제목 없음"}
-                    </h3>
+                    <>
+                      <h3
+                        className="font-medium text-sm mb-1 truncate transition-colors duration-300"
+                        style={{ color: "#5d7c5b", fontSize: "0.95rem", fontWeight: 600 }}
+                      >
+                        {it.title || "제목 없음"}
+                      </h3>
+                      
+                      {/* AI 모델 표시 */}
+                      {it.selectedModels && it.selectedModels.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-1">
+                          {it.selectedModels.map((modelId, idx) => (
+                            <span
+                              key={idx}
+                              className="text-xs px-2 py-0.5 rounded-full"
+                              style={{
+                                backgroundColor: 'rgba(139, 168, 138, 0.15)',
+                                color: '#5d7c5b',
+                                fontSize: '0.7rem',
+                                fontWeight: 500
+                              }}
+                            >
+                              {modelId}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      
+                      <p
+                        className="text-xs transition-colors duration-300 truncate"
+                        style={{ color: "rgba(45, 62, 44, 0.5)", fontSize: "0.8rem", lineHeight: 1.4 }}
+                      >
+                        {new Date(it.updatedAt).toLocaleString('ko-KR')}
+                      </p>
+                    </>
                   )}
                 </div>
-                
-                {!isEditing && (
-                  <p
-                    className="text-xs mt-1 transition-colors duration-300 truncate"
-                    style={{ color: "rgba(45, 62, 44, 0.5)", fontSize: "0.8rem", lineHeight: 1.4 }}
-                  >
-                    {new Date(it.updatedAt).toLocaleString('ko-KR')}
-                  </p>
-                )}
               </div>
             );
           })
