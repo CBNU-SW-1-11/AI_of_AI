@@ -57,6 +57,17 @@ logger = logging.getLogger(__name__)
 # 인코딩 문제 해결을 위한 설정
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
+KOREAN_LANGUAGE_INSTRUCTION = "\n\nIMPORTANT: Regardless of the question language, you MUST respond in natural and fluent Korean. Never reply in any other language."
+
+
+def enforce_korean_instruction(text: str) -> str:
+    """Ensure that the given system prompt explicitly enforces Korean responses."""
+    if not text:
+        return text
+    if KOREAN_LANGUAGE_INSTRUCTION in text:
+        return text
+    return text + KOREAN_LANGUAGE_INSTRUCTION
+
 OPENAI_MODEL_COMPLETION_LIMITS = [
     ("gpt-3.5", 4096),
     ("gpt-4o-mini", 8192),
@@ -373,7 +384,9 @@ def generate_optimal_response_with_ollama(ai_responses, user_question):
 AI 답변들:
 {responses_text}
 
-위 답변들을 분석하여 최적의 통합 답변을 제공해주세요."""
+위 답변들을 분석하여 최적의 통합 답변을 제공해주세요.
+
+⚠️ 지시사항: 질문 언어나 내용에 상관없이 최종 통합 답변과 모든 설명은 반드시 자연스럽고 유창한 한국어로 작성하세요."""
         
         response = ollama.chat(
                    model='llama3.2:latest',
@@ -420,10 +433,7 @@ def generate_optimal_response(ai_responses, user_question, api_key=None):
 - 특징: [특별한 특징]
 """
         
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": f"""당신은 AI 응답 분석 및 최적화 전문가입니다. 여러 AI의 답변을 분석하여 가장 완전하고 정확한 통합 답변을 제공해야 합니다.
+        system_prompt = f"""당신은 AI 응답 분석 및 최적화 전문가입니다. 여러 AI의 답변을 분석하여 가장 완전하고 정확한 통합 답변을 제공해야 합니다.
 
 다음 형식으로 응답해주세요:
 
@@ -440,8 +450,16 @@ def generate_optimal_response(ai_responses, user_question, api_key=None):
 [가장 추천하는 답변과 그 이유 - 어떤 상황에서 어떤 AI를 선택해야 하는지 포함]
 
 ## 💡 추가 인사이트
-[질문에 대한 더 깊은 이해나 추가 고려사항]"""},
-                {"role": "user", "content": f"질문: {user_question}\n\n다음은 여러 AI의 답변입니다:\n\n{responses_text}\n위 답변들을 분석하여 최적의 통합 답변을 제공해주세요."}
+[질문에 대한 더 깊은 이해나 추가 고려사항]"""
+        system_prompt = enforce_korean_instruction(system_prompt)
+
+        user_prompt = f"질문: {user_question}\n\n다음은 여러 AI의 답변입니다:\n\n{responses_text}\n위 답변들을 분석하여 최적의 통합 답변을 제공해주세요.\n\n⚠️ 지시사항: 질문 언어나 내용에 상관없이 반드시 자연스럽고 유창한 한국어로 작성하세요."
+
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
             ],
             temperature=0.7,
             max_tokens=2500
@@ -598,6 +616,8 @@ Always wrap code in proper markdown code blocks so it can be properly rendered."
                     else:
                         system_content = "You are an AI assistant that responds in Korean. Provide helpful, accurate, and detailed responses to user questions. Do not provide code unless explicitly asked."
                 
+                system_content = enforce_korean_instruction(system_content)
+
                 self.conversation_history.append({
                     "role": "system",
                     "content": system_content
@@ -664,18 +684,23 @@ Always wrap code in proper markdown code blocks so it can be properly rendered."
                     
                     # 대화 히스토리를 포함한 메시지 생성
                     messages = []
+                    system_prompt = None
                     for msg in self.conversation_history:
                         if msg['role'] == 'system':
-                            continue  # Claude는 system 메시지를 지원하지 않음
+                            if system_prompt is None:
+                                system_prompt = msg['content']
+                            continue
                         messages.append({
                             "role": msg['role'],
                             "content": msg['content']
                         })
+                    system_prompt = enforce_korean_instruction(system_prompt or "")
                     
                     message = client.messages.create(
                         model="claude-3-5-haiku-20241022",
                         max_tokens=4096,
                         temperature=0.7,
+                        system=system_prompt,
                         messages=messages
                     )
                     
