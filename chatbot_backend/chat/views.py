@@ -57,6 +57,33 @@ logger = logging.getLogger(__name__)
 # 인코딩 문제 해결을 위한 설정
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
+OPENAI_MODEL_COMPLETION_LIMITS = [
+    ("gpt-3.5", 4096),
+    ("gpt-4o-mini", 8192),
+    ("gpt-4o", 8192),
+    ("gpt-4-turbo", 8192),
+    ("gpt-4.1-mini", 8192),
+    ("gpt-4.1", 8192),
+    ("gpt-4", 8192),
+    ("gpt-5", 8192),
+    ("o1", 8192),
+    ("o3", 8192),
+]
+
+DEFAULT_OPENAI_COMPLETION_LIMIT = 4096
+
+
+def get_openai_completion_limit(model_name: str) -> int:
+    """모델명에 따라 안전한 최대 토큰 수를 반환"""
+    if not model_name:
+        return DEFAULT_OPENAI_COMPLETION_LIMIT
+    normalized_name = model_name.lower()
+    for key, limit in OPENAI_MODEL_COMPLETION_LIMITS:
+        if key in normalized_name:
+            return limit
+    return DEFAULT_OPENAI_COMPLETION_LIMIT
+
+
 # 파일 처리 유틸리티 함수들
 def extract_text_from_pdf(file_content):
     """PDF에서 텍스트 추출 (직접 추출 + OCR 백업)"""
@@ -602,11 +629,11 @@ Always wrap code in proper markdown code blocks so it can be properly rendered."
                 if not is_latest_model:
                     api_params["temperature"] = 0.7
                 
+                completion_limit = get_openai_completion_limit(self.model)
                 if is_latest_model:
-                    # GPT-5 등 최신 모델은 더 큰 토큰 제한 설정 (최대 16384)
-                    api_params["max_completion_tokens"] = 16384
+                    api_params["max_completion_tokens"] = completion_limit
                 else:
-                    api_params["max_tokens"] = 16384
+                    api_params["max_tokens"] = completion_limit
                 
                 try:
                     response = self.client.chat.completions.create(**api_params)
@@ -2500,12 +2527,12 @@ JSON 형식으로만 응답하세요."""},
             if not is_latest_model:
                 api_params["temperature"] = 0.0  # 더 일관된 출력을 위해 0으로 설정
             
+            completion_limit = get_openai_completion_limit(openai_model_name)
             # 최신 모델은 max_completion_tokens, 기존 모델은 max_tokens 사용
             if is_latest_model:
-                # GPT-5 등 최신 모델은 더 큰 토큰 제한 설정 (최대 16384)
-                api_params["max_completion_tokens"] = 16384
+                api_params["max_completion_tokens"] = completion_limit
             else:
-                api_params["max_tokens"] = 16384
+                api_params["max_tokens"] = completion_limit
                 api_params["response_format"] = {"type": "json_object"}  # JSON 형식 강제
             
             response = client.chat.completions.create(**api_params)
@@ -3686,38 +3713,60 @@ class VideoChatView(APIView):
             # 프레임 정보 구성
             relevant_frames = []
             if chat_result.get('frames'):
-                # 메타 DB에서 전체 프레임 정보 가져오기
-                meta_db_path = f"/Users/seon/AIOFAI_F/AI_of_AI/chatbot_backend/media/upload_1758464088_upload_1758158306_upload_1758153730_upload_1758152157_test2.mp4-meta_db.json"
+                # 메타 DB에서 전체 프레임 정보 가져오기 (영상별 동적 경로)
+                meta_db_filename = f"{video.original_name or video.filename}-meta_db.json"
+                meta_db_path = os.path.join(settings.MEDIA_ROOT, meta_db_filename)
                 all_frames = []
-                try:
-                    with open(meta_db_path, 'r', encoding='utf-8') as f:
-                        meta_data = json.load(f)
-                        all_frames = meta_data.get('frame', [])
-                except:
-                    pass
+                if os.path.exists(meta_db_path):
+                    try:
+                        with open(meta_db_path, 'r', encoding='utf-8') as f:
+                            meta_data = json.load(f)
+                            all_frames = meta_data.get('frame', [])
+                    except Exception as meta_error:
+                        logger.warning(f"메타 DB 로드 실패({meta_db_path}): {meta_error}")
+                else:
+                    logger.warning(f"메타 DB 파일이 존재하지 않습니다: {meta_db_path}")
                 
                 for idx, frame in enumerate(chat_result['frames']):
-                    # 실제 프레임 인덱스 찾기 (timestamp로 매칭)
-                    actual_frame_index = -1
-                    for i, meta_frame in enumerate(all_frames):
-                        if abs(meta_frame.get('timestamp', 0) - frame.get('timestamp', 0)) < 0.1:
-                            actual_frame_index = i
-                            break
+                    meta_frame = None
+                    if all_frames:
+                        # timestamp 기준으로 메타 프레임 찾기
+                        for candidate in all_frames:
+                            if abs(candidate.get('timestamp', 0) - frame.get('timestamp', 0)) < 0.1:
+                                meta_frame = candidate
+                                break
                     
-                    # 이미지 파일 경로 생성 (실제 프레임 인덱스 + 1)
-                    if actual_frame_index >= 0:
-                        frame_image_path = f"images/video{video_id}_frame{actual_frame_index + 1}.jpg"
-                    else:
-                        frame_image_path = f"images/video{video_id}_frame{idx + 1}.jpg"
+                    # 이미지 경로와 ID 결정
+                    image_id = frame.get('image_id')
+                    if not image_id and meta_frame:
+                        image_id = meta_frame.get('image_id')
+                    if not image_id:
+                        image_id = idx + 1
+                    
+                    frame_image_path = frame.get('frame_image_path')
+                    if not frame_image_path and meta_frame:
+                        frame_image_path = meta_frame.get('frame_image_path')
+                    if not frame_image_path:
+                        frame_image_path = f"images/video{video_id}_frame{image_id}.jpg"
+                    frame_image_path = frame_image_path.lstrip('/')
+                    
+                    raw_objects = frame.get('objects', []) or []
+                    persons = frame.get('persons')
+                    if persons is None:
+                        persons = [obj for obj in raw_objects if obj.get('class') == 'person']
+                    
+                    other_objects = frame.get('detected_other_objects')
+                    if other_objects is None:
+                        other_objects = [obj for obj in raw_objects if obj.get('class') != 'person']
                     
                     frame_info = {
-                        'image_id': frame.get('image_id', idx + 1),
+                        'image_id': image_id,
                         'timestamp': frame.get('timestamp', 0),
-                        'image_url': f"/media/{frame_image_path}",  # /media/ 경로 추가
+                        'image_url': f"/media/{frame_image_path}",
                         'caption': frame.get('caption', ''),
-                        'relevance_score': frame.get('match_score', 1.0),  # match_score를 relevance_score로 변환
-                        'persons': frame.get('objects', [])[:3],  # 최대 3명만
-                        'objects': [],
+                        'relevance_score': frame.get('match_score', 1.0),
+                        'persons': persons[:3] if persons else [],
+                        'objects': other_objects,
                         'scene_attributes': {
                             'scene_type': 'unknown',
                             'lighting': 'unknown',

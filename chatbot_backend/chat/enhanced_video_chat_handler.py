@@ -98,40 +98,112 @@ class EnhancedVideoChatHandler:
         return found_frames
     
     def search_frames_by_color(self, color_name):
-        """색상으로 프레임 검색 (2중 검증: 캡션 + 추출된 색상)"""
+        """색상으로 프레임 검색 (캡션 우선 + 색상 추출 보조)"""
+        if not color_name:
+            return []
+        
         found_frames = []
         color_name_lower = color_name.lower()
         
+        # 한국어 → 영어 기본 색상 매핑
+        korean_to_english = {
+            '분홍색': 'pink',
+            '핑크': 'pink',
+            '보라색': 'purple',
+            '보라': 'purple',
+            '자주색': 'purple',
+            '자홍색': 'purple',
+            '파란색': 'blue',
+            '파랑': 'blue',
+            '푸른색': 'blue',
+            '남색': 'blue',
+            '하늘색': 'blue',
+            '초록색': 'green',
+            '초록': 'green',
+            '녹색': 'green',
+            '연두색': 'green',
+            '노란색': 'yellow',
+            '노랑': 'yellow',
+            '황색': 'yellow',
+            '주황색': 'orange',
+            '주황': 'orange',
+            '오렌지': 'orange',
+            '빨간색': 'red',
+            '빨강': 'red',
+            '적색': 'red',
+            '흰색': 'white',
+            '하얀색': 'white',
+            '검은색': 'black',
+            '까만색': 'black',
+            '회색': 'gray',
+            '그레이': 'gray',
+            '은색': 'gray',
+            '은빛': 'gray'
+        }
+        
+        base_color = korean_to_english.get(color_name_lower, color_name_lower)
+        
+        # 색상 동의어 매핑 (pink -> rose, fuchsia 등)
+        color_synonyms = {
+            'pink': ['pink', 'rose', 'fuchsia', 'magenta', 'rosy'],
+            'red': ['red', 'crimson', 'scarlet'],
+            'orange': ['orange', 'amber', 'tangerine'],
+            'yellow': ['yellow', 'gold', 'golden'],
+            'green': ['green', 'lime', 'emerald'],
+            'blue': ['blue', 'navy', 'azure', 'teal'],
+            'purple': ['purple', 'violet', 'lavender'],
+            'white': ['white', 'ivory'],
+            'black': ['black'],
+            'gray': ['gray', 'grey', 'silver']
+        }
+        synonyms = color_synonyms.get(base_color, [base_color])
+        
+        # 원본 검색어(한국어 포함)를 보조 키워드로 추가
+        if color_name_lower not in synonyms:
+            synonyms.append(color_name_lower)
+        
         for frame in self.frames:
             match_score = 0
-            
-            # 1. 캡션에서 색상 검색
             caption = frame.get('caption', '').lower()
-            if color_name_lower in caption:
-                match_score += 1
+            caption_weight = 3  # Ollama 캡션 우선 가중치
+            color_weight = 1    # 색상 추출 보조 가중치
             
-            # 2. 추출된 색상 정보 확인
+            # 1. 캡션에서 색상 검색 (우선 순위 높음)
+            if any(word in caption for word in synonyms):
+                match_score += caption_weight
+            
+            # 2. 추출된 색상 정보 확인 (보조)
             objects = frame.get('objects', [])
             for obj in objects:
                 if obj.get('class') == 'person':
                     clothing_colors = obj.get('clothing_colors', {})
-                    upper_color = clothing_colors.get('upper', '').lower()
-                    lower_color = clothing_colors.get('lower', '').lower()
-                    
-                    if color_name_lower in upper_color or color_name_lower in lower_color:
-                        match_score += 1
+                    upper_color = (clothing_colors.get('upper') or '').lower()
+                    lower_color = (clothing_colors.get('lower') or '').lower()
+                    if any(word in upper_color for word in synonyms) or any(word in lower_color for word in synonyms):
+                        match_score += color_weight
                         break
             
-            # 2중 검증: 둘 중 하나 이상 매칭되면 추가
             if match_score > 0:
                 frame_with_score = frame.copy()
                 frame_with_score['match_score'] = match_score
                 found_frames.append(frame_with_score)
         
-        # 매칭 점수로 정렬 (높은 순)
-        found_frames.sort(key=lambda x: x.get('match_score', 0), reverse=True)
+        # 캡션 매칭 우선, 이후 점수 순 정렬
+        found_frames.sort(key=lambda x: (x.get('match_score', 0), x.get('timestamp', 0)), reverse=True)
         
-        return found_frames
+        # 중복 타임스탬프 제거 후 상위 5개만 반환
+        unique_frames = []
+        seen_timestamps = set()
+        for frame in found_frames:
+            ts_key = round(frame.get('timestamp', 2))
+            if ts_key in seen_timestamps:
+                continue
+            unique_frames.append(frame)
+            seen_timestamps.add(ts_key)
+            if len(unique_frames) >= 5:
+                break
+        
+        return unique_frames
     
     def analyze_people_count(self):
         """영상 전체의 고유한 사람 수 분석 (프레임별 중복 고려)"""

@@ -19,6 +19,7 @@ const MainPage = () => {
   const [isSettingVisible, setIsSettingVisible] = useState(false);
   const [isLoginVisible, setIsLoginVisible] = useState(false);
   const [isModelModalOpen, setIsModelModalOpen] = useState(false);
+  const [pendingNewChatAction, setPendingNewChatAction] = useState(null);
   const { selectedModels, setSelectedModels } = useChat();
 
   const user = useSelector((state) => state.auth.user);
@@ -44,6 +45,23 @@ const MainPage = () => {
     }
   }, [user, isLoginVisible]);
 
+  useEffect(() => {
+    const handleModelSelectionRequest = (event) => {
+      const detail = event.detail || {};
+      if (detail.onConfirm && typeof detail.onConfirm === 'function') {
+        setPendingNewChatAction(() => detail.onConfirm);
+      } else {
+        setPendingNewChatAction(null);
+      }
+      setIsModelModalOpen(true);
+    };
+
+    window.addEventListener('open-model-selection', handleModelSelectionRequest);
+    return () => {
+      window.removeEventListener('open-model-selection', handleModelSelectionRequest);
+    };
+  }, []);
+
   const toggleSetting = () => {
     setIsSettingVisible((v) => !v);
     setIsLoginVisible(false);
@@ -62,6 +80,21 @@ const MainPage = () => {
     localStorage.removeItem("accessToken");
     localStorage.removeItem("user");
     dispatch(logout());
+  };
+
+  const handleModelModalClose = () => {
+    setIsModelModalOpen(false);
+    setPendingNewChatAction(null);
+  };
+
+  const handleModelModalConfirm = (models) => {
+    if (!models || models.length === 0) return;
+    setSelectedModels(models);
+    if (pendingNewChatAction) {
+      pendingNewChatAction(models);
+      setPendingNewChatAction(null);
+    }
+    setIsModelModalOpen(false);
   };
 
   // 배경 애니메이션 스타일
@@ -138,7 +171,10 @@ const MainPage = () => {
               />
               <CirclePlus
                 className="w-6 h-6 text-gray-600 cursor-pointer transition-all duration-300 hover:scale-110"
-                onClick={() => setIsModelModalOpen(true)}
+                onClick={() => {
+                  setPendingNewChatAction(null);
+                  setIsModelModalOpen(true);
+                }}
                 title="AI 모델 선택"
               />
               <Settings
@@ -157,7 +193,10 @@ const MainPage = () => {
               />
               <CirclePlus
                 className="w-6 h-6 text-gray-600 cursor-pointer transition-all duration-300 hover:scale-110"
-                onClick={() => setIsModelModalOpen(true)}
+                onClick={() => {
+                  setPendingNewChatAction(null);
+                  setIsModelModalOpen(true);
+                }}
                 title="AI 모델 선택"
               />
               <UserCircle
@@ -184,7 +223,8 @@ const MainPage = () => {
 
       <ModelSelectionModal
         isOpen={isModelModalOpen}
-        onClose={() => setIsModelModalOpen(false)}
+        onClose={handleModelModalClose}
+        onConfirm={handleModelModalConfirm}
         selectedModels={selectedModels}
         onModelSelect={setSelectedModels}
       />

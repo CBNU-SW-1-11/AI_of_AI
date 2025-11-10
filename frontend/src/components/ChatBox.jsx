@@ -240,15 +240,15 @@ const OptimalResponseRenderer = ({ content }) => {
         if (error && error !== '오류 없음') {
           currentAnalysis.cons = [error];
         }
-      } else if (trimmedLine.includes('✅ 정확한 정보:')) {
-        const info = trimmedLine.replace('✅ 정확한 정보:', '').trim();
+      } else if (trimmedLine.includes('✅ 참고한 정보:')) {
+        const info = trimmedLine.replace('✅ 참고한 정보:', '').trim();
         if (info && info !== '기본 정보 제공') {
           currentAnalysis.pros = info.split(',').map(i => i.trim()).filter(i => i.length > 0);
         } else {
           currentAnalysis.pros = ['기본 정보 제공'];
         }
-      } else if (trimmedLine.includes('❌ 틀린 정보:')) {
-        const info = trimmedLine.replace('❌ 틀린 정보:', '').trim();
+      } else if (trimmedLine.includes('❌ 제외한 정보:')) {
+        const info = trimmedLine.replace('❌제외한 정보:', '').trim();
         if (info && info !== '없음') {
           currentAnalysis.cons = info.split(',').map(i => i.trim()).filter(i => i.length > 0);
         } else {
@@ -264,13 +264,13 @@ const OptimalResponseRenderer = ({ content }) => {
         if (info) {
           currentAnalysis.warnings = info.split(',').map(i => i.trim()).filter(i => i.length > 0);
         }
-      } else if (trimmedLine.startsWith('✅ 채택된 정보:')) {
-        const info = trimmedLine.replace('✅ 채택된 정보:', '').trim();
+      } else if (trimmedLine.startsWith('✅ 참고한 정보:')) {
+        const info = trimmedLine.replace('✅ 참고한 정보:', '').trim();
         if (info && info !== '없음' && info !== '없습니다') {
           currentAnalysis.adopted.push(info);
         }
-      } else if (trimmedLine.startsWith('❌ 제외된 정보:')) {
-        const info = trimmedLine.replace('❌ 제외된 정보:', '').trim();
+      } else if (trimmedLine.startsWith('❌ 제외한 정보:')) {
+        const info = trimmedLine.replace('❌ 제외한 정보:', '').trim();
         if (info && info !== '없음' && info !== '없습니다') {
           currentAnalysis.rejected.push(info);
         }

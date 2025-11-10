@@ -1,0 +1,3831 @@
+{
+  "video_id": "video.mp4",
+  "fps": 30,
+  "width": 1280,
+  "height": 720,
+  "frame": [
+    {
+      "image_id": 1,
+      "timestamp": 0.0,
+      "caption": "The image is composed of three different frames showing the same scene from different angles.",
+      "frame_image_path": "images/video70_frame1.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.0,
+            0.2019774011299435,
+            0.06541353383458647,
+            0.556497175141243
+          ],
+          "confidence": 0.8351473808288574,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 33,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "yellow",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.7676691729323308,
+            0.21045197740112995,
+            0.8225563909774436,
+            0.4901129943502825
+          ],
+          "confidence": 0.7316656112670898,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 32,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "green",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.44285714285714284,
+            0.2966101694915254,
+            0.4774436090225564,
+            0.4435028248587571
+          ],
+          "confidence": 0.4951583445072174,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 33,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "yellow",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 4,
+          "bbox": [
+            0.7451127819548872,
+            0.3093220338983051,
+            0.7872180451127819,
+            0.4887005649717514
+          ],
+          "confidence": 0.40388524532318115,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 31,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 2,
+      "timestamp": 1.0,
+      "caption": "\"A spacious retail store interior with large windows showcasing the outside environment. There is one adult woman in a pink top standing near a display. A man in a gray suit and tie stands behind her, engaged in conversation. The atmosphere appears calm and inviting.",
+      "frame_image_path": "images/video70_frame2.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.0,
+            0.2019774011299435,
+            0.06541353383458647,
+            0.556497175141243
+          ],
+          "confidence": 0.8390791416168213,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 33,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "yellow",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.7684210526315789,
+            0.21045197740112995,
+            0.8225563909774436,
+            0.4901129943502825
+          ],
+          "confidence": 0.7353982925415039,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 32,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "green",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.44285714285714284,
+            0.2937853107344633,
+            0.4774436090225564,
+            0.4435028248587571
+          ],
+          "confidence": 0.4855233430862427,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 35,
+            "emotion": "angry",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "yellow",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 4,
+          "bbox": [
+            0.7451127819548872,
+            0.3107344632768362,
+            0.7872180451127819,
+            0.4887005649717514
+          ],
+          "confidence": 0.4243820011615753,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 31,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 3,
+      "timestamp": 2.0,
+      "caption": "\"A mall scene transitioning from day to night. A man in a red shirt walks into the building while a woman in black clothing stands outside, perhaps waiting for someone or something. The interior is dimly lit and features a large TV screen displaying advertisements, with a few other shoppers visible....",
+      "frame_image_path": "images/video70_frame3.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.03308270676691729,
+            0.20056497175141244,
+            0.10601503759398496,
+            0.5550847457627118
+          ],
+          "confidence": 0.8363277316093445,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 27,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "yellow",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.8007518796992481,
+            0.21045197740112995,
+            0.8481203007518797,
+            0.4943502824858757
+          ],
+          "confidence": 0.5843304991722107,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 37,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "green",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.7819548872180451,
+            0.3206214689265537,
+            0.8135338345864662,
+            0.4957627118644068
+          ],
+          "confidence": 0.5569928288459778,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 29,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 4,
+      "timestamp": 3.0,
+      "caption": "The image shows an outdoor city scene at what appears to be sunset, as indicated by the warm lighting and long shadows. There are 3 people visible in this frame: a man walking down the sidewalk (30s-40s), a woman carrying a handbag (25-35 years old), and a boy crossing the street (12-15 years old). ...",
+      "frame_image_path": "images/video70_frame4.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.13383458646616542,
+            0.0014124293785310734,
+            0.3518796992481203,
+            0.7584745762711864
+          ],
+          "confidence": 0.9092441201210022,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 36,
+            "emotion": "happy",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "yellow",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.07518796992481203,
+            0.18926553672316385,
+            0.16090225563909774,
+            0.5607344632768362
+          ],
+          "confidence": 0.8460855484008789,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 31,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "yellow",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.7909774436090226,
+            0.3177966101694915,
+            0.8263157894736842,
+            0.4985875706214689
+          ],
+          "confidence": 0.6175299286842346,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 27,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 4,
+          "bbox": [
+            0.8112781954887218,
+            0.22033898305084745,
+            0.8661654135338346,
+            0.4872881355932203
+          ],
+          "confidence": 0.6103315353393555,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 35,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "green",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 5,
+          "bbox": [
+            0.8360902255639098,
+            0.23163841807909605,
+            0.869172932330827,
+            0.4844632768361582
+          ],
+          "confidence": 0.41511470079421997,
+          "clothing_colors": {
+            "upper": "pink",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 29,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "pink",
+              "lower_color": "green",
+              "dominant_color": "pink"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 6,
+          "bbox": [
+            0.9729323308270676,
+            0.16666666666666666,
+            0.9992481203007518,
+            0.4406779661016949
+          ],
+          "confidence": 0.345268577337265,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 23,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 7,
+          "bbox": [
+            0.0,
+            0.2019774011299435,
+            0.02556390977443609,
+            0.5466101694915254
+          ],
+          "confidence": 0.27615734934806824,
+          "clothing_colors": {
+            "upper": "orange",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 24,
+            "emotion": "angry",
+            "clothing": {
+              "upper_color": "orange",
+              "lower_color": "yellow",
+              "dominant_color": "orange"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 5,
+      "timestamp": 4.0,
+      "caption": "The image shows a public indoor space with several individuals present. In the foreground, there is an elderly woman dressed in blue walking towards the camera, while another individual wearing a white jacket and black pants appears to be walking away. To her left, a man in a green shirt is also mov...",
+      "frame_image_path": "images/video70_frame5.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.8654135338345864,
+            0.02401129943502825,
+            0.9992481203007518,
+            0.75
+          ],
+          "confidence": 0.9244614243507385,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 31,
+            "emotion": "angry",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.493984962406015,
+            0.0,
+            0.6458646616541354,
+            0.6567796610169492
+          ],
+          "confidence": 0.8935346007347107,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 34,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "yellow",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.13909774436090225,
+            0.16666666666666666,
+            0.21428571428571427,
+            0.5550847457627118
+          ],
+          "confidence": 0.8578245639801025,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 31,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "green",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 4,
+          "bbox": [
+            0.029323308270676692,
+            0.211864406779661,
+            0.09473684210526316,
+            0.557909604519774
+          ],
+          "confidence": 0.7628417611122131,
+          "clothing_colors": {
+            "upper": "orange",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 31,
+            "emotion": "angry",
+            "clothing": {
+              "upper_color": "orange",
+              "lower_color": "yellow",
+              "dominant_color": "orange"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 5,
+          "bbox": [
+            0.8112781954887218,
+            0.2231638418079096,
+            0.8654135338345864,
+            0.4915254237288136
+          ],
+          "confidence": 0.6603557467460632,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 35,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "green",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 6,
+          "bbox": [
+            0.7917293233082707,
+            0.3206214689265537,
+            0.8240601503759398,
+            0.4985875706214689
+          ],
+          "confidence": 0.5920654535293579,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 26,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 7,
+          "bbox": [
+            0.8082706766917294,
+            0.23022598870056496,
+            0.8518796992481203,
+            0.4872881355932203
+          ],
+          "confidence": 0.538769006729126,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 37,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "green",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 8,
+          "bbox": [
+            0.8308270676691729,
+            0.2288135593220339,
+            0.8669172932330828,
+            0.4858757062146893
+          ],
+          "confidence": 0.2863209545612335,
+          "clothing_colors": {
+            "upper": "pink",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 35,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "pink",
+              "lower_color": "green",
+              "dominant_color": "pink"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 6,
+      "timestamp": 5.0,
+      "caption": "Three individuals are visible in this frame. In the center, a woman wearing a white jacket is captured mid-stride as she walks on a sidewalk. To her left, a man in a black shirt and jeans is also walking. On her right, an elderly woman with red hair is standing still, looking to the side. The backgr...",
+      "frame_image_path": "images/video70_frame6.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.14962406015037594,
+            0.13983050847457626,
+            0.22556390977443608,
+            0.5720338983050848
+          ],
+          "confidence": 0.8810150027275085,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 36,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.7398496240601504,
+            0.00423728813559322,
+            0.9353383458646617,
+            0.8516949152542372
+          ],
+          "confidence": 0.8755510449409485,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 28,
+            "emotion": "angry",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.06315789473684211,
+            0.18785310734463276,
+            0.13458646616541353,
+            0.5734463276836158
+          ],
+          "confidence": 0.7826518416404724,
+          "clothing_colors": {
+            "upper": "orange",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 31,
+            "emotion": "angry",
+            "clothing": {
+              "upper_color": "orange",
+              "lower_color": "yellow",
+              "dominant_color": "orange"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 4,
+          "bbox": [
+            0.9383458646616541,
+            0.0,
+            0.9992481203007518,
+            0.8912429378531074
+          ],
+          "confidence": 0.6886696219444275,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "green"
+          },
+          "analysis_source": "fallback",
+          "attributes": {
+            "gender": "person",
+            "age": "adult",
+            "estimated_age": 0,
+            "emotion": "neutral",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "green",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 5,
+          "bbox": [
+            0.9390977443609022,
+            0.0,
+            0.9992481203007518,
+            0.6228813559322034
+          ],
+          "confidence": 0.6106043457984924,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 22,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "green",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 6,
+          "bbox": [
+            0.6902255639097744,
+            0.043785310734463276,
+            0.7902255639097744,
+            0.4604519774011299
+          ],
+          "confidence": 0.5052525401115417,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 32,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 7,
+      "timestamp": 6.0,
+      "caption": "In this image, there are six people on a sidewalk. There's an elderly man wearing a green jacket walking while carrying a bag. Next to him, a woman in a black coat is also walking and carrying a handbag. A young adult person with white clothing and glasses is seen walking with a blue handbag. Anothe...",
+      "frame_image_path": "images/video70_frame7.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.7421052631578947,
+            0.0014124293785310734,
+            0.9721804511278196,
+            0.9745762711864406
+          ],
+          "confidence": 0.9322336912155151,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "orange"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 35,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "orange",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.13233082706766916,
+            0.12005649717514125,
+            0.22556390977443608,
+            0.6115819209039548
+          ],
+          "confidence": 0.8902963399887085,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 32,
+            "emotion": "neutral",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.03383458646616541,
+            0.15254237288135594,
+            0.12706766917293233,
+            0.6186440677966102
+          ],
+          "confidence": 0.8809853792190552,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 32,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "yellow",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 4,
+          "bbox": [
+            0.49849624060150377,
+            0.0014124293785310734,
+            0.7646616541353384,
+            0.980225988700565
+          ],
+          "confidence": 0.7151024341583252,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 33,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 5,
+          "bbox": [
+            0.20977443609022556,
+            0.11440677966101695,
+            0.26766917293233083,
+            0.3177966101694915
+          ],
+          "confidence": 0.2526821494102478,
+          "clothing_colors": {
+            "upper": "red",
+            "lower": "red"
+          },
+          "analysis_source": "fallback",
+          "attributes": {
+            "gender": "person",
+            "age": "adult",
+            "estimated_age": 0,
+            "emotion": "neutral",
+            "clothing": {
+              "upper_color": "red",
+              "lower_color": "red",
+              "dominant_color": "red"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 8,
+      "timestamp": 7.0,
+      "caption": "This frame captures a moment on a city street where two adults are walking together. The woman is dressed in a dark jacket and blue pants, while the man beside her is wearing a light-colored shirt and dark pants. They both carry handbags. The background features other pedestrians, including an elder...",
+      "frame_image_path": "images/video70_frame8.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.49699248120300754,
+            0.005649717514124294,
+            0.7781954887218046,
+            0.9830508474576272
+          ],
+          "confidence": 0.9415379762649536,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "orange"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 35,
+            "emotion": "angry",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "orange",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "medium"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.18571428571428572,
+            0.0,
+            0.4691729323308271,
+            0.9844632768361582
+          ],
+          "confidence": 0.8617640137672424,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 34,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "medium"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.08045112781954887,
+            0.13559322033898305,
+            0.17218045112781954,
+            0.6878531073446328
+          ],
+          "confidence": 0.8341900110244751,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 31,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "yellow",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "medium"
+          }
+        },
+        {
+          "class": "person",
+          "id": 4,
+          "bbox": [
+            0.8413533834586466,
+            0.17937853107344634,
+            0.9112781954887218,
+            0.518361581920904
+          ],
+          "confidence": 0.7989760637283325,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 32,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "green",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "medium"
+          }
+        },
+        {
+          "class": "person",
+          "id": 5,
+          "bbox": [
+            0.8067669172932331,
+            0.3319209039548023,
+            0.8488721804511278,
+            0.5225988700564972
+          ],
+          "confidence": 0.7522525787353516,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 36,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "medium"
+          }
+        },
+        {
+          "class": "person",
+          "id": 6,
+          "bbox": [
+            0.9646616541353383,
+            0.10028248587570622,
+            0.9992481203007518,
+            0.4985875706214689
+          ],
+          "confidence": 0.6636078953742981,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 22,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "yellow",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "medium"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 9,
+      "timestamp": 8.0,
+      "caption": "The image is split into three parts, each showing a scene from a street.",
+      "frame_image_path": "images/video70_frame9.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.0,
+            0.002824858757062147,
+            0.4037593984962406,
+            0.9788135593220338
+          ],
+          "confidence": 0.8881194591522217,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "orange"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 34,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "orange",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "medium"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.556390977443609,
+            0.03248587570621469,
+            0.6849624060150376,
+            0.6666666666666666
+          ],
+          "confidence": 0.8763626217842102,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "cyan"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 30,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "cyan",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "medium"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.44586466165413535,
+            0.1016949152542373,
+            0.5759398496240602,
+            0.6850282485875706
+          ],
+          "confidence": 0.8603105545043945,
+          "clothing_colors": {
+            "upper": "orange",
+            "lower": "orange"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 32,
+            "emotion": "neutral",
+            "clothing": {
+              "upper_color": "orange",
+              "lower_color": "orange",
+              "dominant_color": "orange"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "medium"
+          }
+        },
+        {
+          "class": "person",
+          "id": 4,
+          "bbox": [
+            0.9503759398496241,
+            0.1652542372881356,
+            0.9992481203007518,
+            0.4788135593220339
+          ],
+          "confidence": 0.7073878049850464,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 32,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "yellow",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "medium"
+          }
+        },
+        {
+          "class": "person",
+          "id": 5,
+          "bbox": [
+            0.8646616541353384,
+            0.3121468926553672,
+            0.9082706766917293,
+            0.5409604519774012
+          ],
+          "confidence": 0.7036905884742737,
+          "clothing_colors": {
+            "upper": "orange",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 36,
+            "emotion": "neutral",
+            "clothing": {
+              "upper_color": "orange",
+              "lower_color": "green",
+              "dominant_color": "orange"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "medium"
+          }
+        },
+        {
+          "class": "person",
+          "id": 6,
+          "bbox": [
+            0.8887218045112782,
+            0.18785310734463276,
+            0.9541353383458646,
+            0.5268361581920904
+          ],
+          "confidence": 0.5187551379203796,
+          "clothing_colors": {
+            "upper": "pink",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 38,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "pink",
+              "lower_color": "green",
+              "dominant_color": "pink"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "medium"
+          }
+        },
+        {
+          "class": "person",
+          "id": 7,
+          "bbox": [
+            0.23984962406015037,
+            0.002824858757062147,
+            0.4293233082706767,
+            0.6709039548022598
+          ],
+          "confidence": 0.5103433728218079,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 29,
+            "emotion": "happy",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "medium"
+          }
+        },
+        {
+          "class": "person",
+          "id": 8,
+          "bbox": [
+            0.2954887218045113,
+            0.00423728813559322,
+            0.42857142857142855,
+            0.6638418079096046
+          ],
+          "confidence": 0.4152335226535797,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 28,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "medium"
+          }
+        },
+        {
+          "class": "person",
+          "id": 9,
+          "bbox": [
+            0.8729323308270677,
+            0.18361581920903955,
+            0.9421052631578948,
+            0.5211864406779662
+          ],
+          "confidence": 0.3868017792701721,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 38,
+            "emotion": "happy",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "green",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "medium"
+          }
+        },
+        {
+          "class": "person",
+          "id": 10,
+          "bbox": [
+            0.9052631578947369,
+            0.1864406779661017,
+            0.9503759398496241,
+            0.5296610169491526
+          ],
+          "confidence": 0.34492775797843933,
+          "clothing_colors": {
+            "upper": "pink",
+            "lower": "cyan"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 25,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "pink",
+              "lower_color": "cyan",
+              "dominant_color": "pink"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "medium"
+          }
+        },
+        {
+          "class": "person",
+          "id": 11,
+          "bbox": [
+            0.31954887218045114,
+            0.365819209039548,
+            0.4150375939849624,
+            0.6624293785310734
+          ],
+          "confidence": 0.29111963510513306,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 29,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "yellow",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "medium"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 10,
+      "timestamp": 9.0,
+      "caption": "\"A city sidewalk at dusk with 9 people walking. An elderly couple holding hands stroll together, a woman in pink and black clothing walks ahead while carrying a handbag. A teenage girl in purple clothing follows them, engaged in conversation on her phone. An adult man in a blue jacket and a boy in a...",
+      "frame_image_path": "images/video70_frame10.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.33533834586466166,
+            0.0,
+            0.5007518796992482,
+            0.7274011299435028
+          ],
+          "confidence": 0.8885411024093628,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 36,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "yellow",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.181203007518797,
+            0.0,
+            0.3819548872180451,
+            0.8912429378531074
+          ],
+          "confidence": 0.8701564073562622,
+          "clothing_colors": {
+            "upper": "orange",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 33,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "orange",
+              "lower_color": "yellow",
+              "dominant_color": "orange"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.09924812030075188,
+            0.0211864406779661,
+            0.2503759398496241,
+            0.8290960451977402
+          ],
+          "confidence": 0.864882230758667,
+          "clothing_colors": {
+            "upper": "pink",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 37,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "pink",
+              "lower_color": "yellow",
+              "dominant_color": "pink"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 4,
+          "bbox": [
+            0.7541353383458647,
+            0.052259887005649715,
+            0.8714285714285714,
+            0.6115819209039548
+          ],
+          "confidence": 0.8648394346237183,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 33,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 5,
+          "bbox": [
+            0.47593984962406016,
+            0.0014124293785310734,
+            0.6368421052631579,
+            0.7401129943502824
+          ],
+          "confidence": 0.8600620031356812,
+          "clothing_colors": {
+            "upper": "orange",
+            "lower": "orange"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 37,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "orange",
+              "lower_color": "orange",
+              "dominant_color": "orange"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 6,
+          "bbox": [
+            0.6714285714285714,
+            0.15112994350282485,
+            0.7518796992481203,
+            0.6016949152542372
+          ],
+          "confidence": 0.7877017855644226,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "orange"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 33,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "orange",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 7,
+          "bbox": [
+            0.9353383458646617,
+            0.3121468926553672,
+            0.9962406015037594,
+            0.556497175141243
+          ],
+          "confidence": 0.7547708749771118,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 32,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "yellow",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 8,
+          "bbox": [
+            0.9466165413533835,
+            0.16242937853107345,
+            0.9977443609022556,
+            0.3714689265536723
+          ],
+          "confidence": 0.30346566438674927,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "cyan"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 32,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "cyan",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 9,
+          "bbox": [
+            0.9466165413533835,
+            0.1638418079096045,
+            0.9992481203007518,
+            0.5296610169491526
+          ],
+          "confidence": 0.25488898158073425,
+          "clothing_colors": {
+            "upper": "blue",
+            "lower": "orange"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 24,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "blue",
+              "lower_color": "orange",
+              "dominant_color": "blue"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 11,
+      "timestamp": 10.0,
+      "caption": "The image captures a moment on a street corner where several people are walking. In the foreground, there is an older woman in a pink shirt and blue pants. She appears to be engaged in conversation as she walks. Next to her, a younger individual dressed in a purple top is also seen walking away from...",
+      "frame_image_path": "images/video70_frame11.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.5639097744360902,
+            0.02824858757062147,
+            0.7218045112781954,
+            0.748587570621469
+          ],
+          "confidence": 0.8902577757835388,
+          "clothing_colors": {
+            "upper": "orange",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 39,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "orange",
+              "lower_color": "green",
+              "dominant_color": "orange"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.6932330827067669,
+            0.007062146892655367,
+            0.8278195488721805,
+            0.6709039548022598
+          ],
+          "confidence": 0.8853908181190491,
+          "clothing_colors": {
+            "upper": "purple",
+            "lower": "orange"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 30,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "purple",
+              "lower_color": "orange",
+              "dominant_color": "purple"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.44661654135338347,
+            0.059322033898305086,
+            0.5714285714285714,
+            0.7231638418079096
+          ],
+          "confidence": 0.8586574792861938,
+          "clothing_colors": {
+            "upper": "pink",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 29,
+            "emotion": "neutral",
+            "clothing": {
+              "upper_color": "pink",
+              "lower_color": "yellow",
+              "dominant_color": "pink"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 4,
+          "bbox": [
+            0.8654135338345864,
+            0.09463276836158192,
+            0.9616541353383459,
+            0.5649717514124294
+          ],
+          "confidence": 0.819116473197937,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 31,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 5,
+          "bbox": [
+            0.8007518796992481,
+            0.1638418079096045,
+            0.8654135338345864,
+            0.5522598870056498
+          ],
+          "confidence": 0.7753720283508301,
+          "clothing_colors": {
+            "upper": "orange",
+            "lower": "orange"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 47,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "orange",
+              "lower_color": "orange",
+              "dominant_color": "orange"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 6,
+          "bbox": [
+            0.9586466165413534,
+            0.1553672316384181,
+            0.9992481203007518,
+            0.5466101694915254
+          ],
+          "confidence": 0.7688771486282349,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 22,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "green",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 12,
+      "timestamp": 11.0,
+      "caption": "This is a composite image of a city scene taken at different times of the day. It features a group of people in various settings, including an indoor shopping area and an outdoor sidewalk. The individuals are engaged in their activities: some walking, others standing, suggesting movement and interac...",
+      "frame_image_path": "images/video70_frame12.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.8052631578947368,
+            0.05084745762711865,
+            0.9308270676691729,
+            0.6709039548022598
+          ],
+          "confidence": 0.8780726194381714,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 34,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "green",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.6383458646616541,
+            0.07768361581920905,
+            0.7293233082706767,
+            0.6426553672316384
+          ],
+          "confidence": 0.8695883750915527,
+          "clothing_colors": {
+            "upper": "pink",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 40,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "pink",
+              "lower_color": "yellow",
+              "dominant_color": "pink"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.7195488721804512,
+            0.06779661016949153,
+            0.8210526315789474,
+            0.6186440677966102
+          ],
+          "confidence": 0.8062788248062134,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 32,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "green",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 4,
+          "bbox": [
+            0.9646616541353383,
+            0.10734463276836158,
+            0.9992481203007518,
+            0.5338983050847458
+          ],
+          "confidence": 0.6802511811256409,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 22,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 5,
+          "bbox": [
+            0.9195488721804511,
+            0.1864406779661017,
+            0.969172932330827,
+            0.5098870056497176
+          ],
+          "confidence": 0.5474973917007446,
+          "clothing_colors": {
+            "upper": "orange",
+            "lower": "orange"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 30,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "orange",
+              "lower_color": "orange",
+              "dominant_color": "orange"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 6,
+          "bbox": [
+            0.868421052631579,
+            0.04943502824858757,
+            0.9413533834586466,
+            0.5028248587570622
+          ],
+          "confidence": 0.35114872455596924,
+          "clothing_colors": {
+            "upper": "purple",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 37,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "purple",
+              "lower_color": "green",
+              "dominant_color": "purple"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 13,
+      "timestamp": 12.0,
+      "caption": "In the image, there are six individuals present at what appears to be a shopping mall or a similar commercial space. The setting is an interior with a large glass window displaying various items for sale. There's a sign on the glass window that reads \"THE FRESH MARKET.\" The atmosphere seems casual a...",
+      "frame_image_path": "images/video70_frame13.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.8872180451127819,
+            0.07909604519774012,
+            0.9992481203007518,
+            0.6115819209039548
+          ],
+          "confidence": 0.8865252733230591,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 32,
+            "emotion": "angry",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "green",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.7488721804511278,
+            0.08333333333333333,
+            0.8293233082706767,
+            0.6002824858757062
+          ],
+          "confidence": 0.8567575812339783,
+          "clothing_colors": {
+            "upper": "pink",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 43,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "pink",
+              "lower_color": "green",
+              "dominant_color": "pink"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.6766917293233082,
+            0.1271186440677966,
+            0.7586466165413533,
+            0.5748587570621468
+          ],
+          "confidence": 0.8472893238067627,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "woman",
+            "age": "young_adult",
+            "estimated_age": 29,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "green",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 4,
+          "bbox": [
+            0.8157894736842105,
+            0.0903954802259887,
+            0.8909774436090225,
+            0.5663841807909604
+          ],
+          "confidence": 0.7423849105834961,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 31,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 5,
+          "bbox": [
+            0.8834586466165414,
+            0.1059322033898305,
+            0.9353383458646617,
+            0.5494350282485876
+          ],
+          "confidence": 0.4808812439441681,
+          "clothing_colors": {
+            "upper": "blue",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 22,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "blue",
+              "lower_color": "green",
+              "dominant_color": "blue"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 6,
+          "bbox": [
+            0.8759398496240601,
+            0.1285310734463277,
+            0.9218045112781955,
+            0.5310734463276836
+          ],
+          "confidence": 0.4044932723045349,
+          "clothing_colors": {
+            "upper": "purple",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 22,
+            "emotion": "neutral",
+            "clothing": {
+              "upper_color": "purple",
+              "lower_color": "green",
+              "dominant_color": "purple"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 14,
+      "timestamp": 13.0,
+      "caption": "The frame captures a vibrant city scene. There are 5 individuals present: one elderly woman dressed in white is walking and talking on her phone; two young women can be seen, one carrying a pink handbag while the other has a blue purse; a young man in green is also walking past the storefronts; and ...",
+      "frame_image_path": "images/video70_frame14.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.9210526315789473,
+            0.1285310734463277,
+            0.9992481203007518,
+            0.5706214689265536
+          ],
+          "confidence": 0.8815305829048157,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 36,
+            "emotion": "angry",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "green",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.6451127819548872,
+            0.0903954802259887,
+            0.7428571428571429,
+            0.6186440677966102
+          ],
+          "confidence": 0.8556631803512573,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "green"
+          },
+          "analysis_source": "fallback",
+          "attributes": {
+            "gender": "person",
+            "age": "adult",
+            "estimated_age": 0,
+            "emotion": "neutral",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "green",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.849624060150376,
+            0.1285310734463277,
+            0.9263157894736842,
+            0.5607344632768362
+          ],
+          "confidence": 0.8526013493537903,
+          "clothing_colors": {
+            "upper": "pink",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 32,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "pink",
+              "lower_color": "green",
+              "dominant_color": "pink"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 4,
+          "bbox": [
+            0.8353383458646616,
+            0.11440677966101695,
+            0.8872180451127819,
+            0.5155367231638418
+          ],
+          "confidence": 0.3865084648132324,
+          "clothing_colors": {
+            "upper": "pink",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 23,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "pink",
+              "lower_color": "green",
+              "dominant_color": "pink"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 5,
+          "bbox": [
+            0.9796992481203007,
+            0.11016949152542373,
+            0.9992481203007518,
+            0.211864406779661
+          ],
+          "confidence": 0.3156384527683258,
+          "clothing_colors": {
+            "upper": "unknown",
+            "lower": "unknown"
+          },
+          "analysis_source": "fallback",
+          "attributes": {
+            "gender": "person",
+            "age": "adult",
+            "estimated_age": 0,
+            "emotion": "neutral",
+            "clothing": {
+              "upper_color": "unknown",
+              "lower_color": "unknown",
+              "dominant_color": "unknown"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 15,
+      "timestamp": 14.0,
+      "caption": "The image shows a busy street scene. On the left, there is a woman walking; she appears to be an adult and is wearing a dark top and carrying a handbag. In the middle of the frame, we see another person walking, but their gender and age are not clearly identifiable due to the angle of the photo. To ...",
+      "frame_image_path": "images/video70_frame15.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.08195488721804511,
+            0.0014124293785310734,
+            0.3037593984962406,
+            0.8305084745762712
+          ],
+          "confidence": 0.8816995620727539,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 31,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "yellow",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.5616541353383459,
+            0.03954802259887006,
+            0.7045112781954888,
+            0.7019774011299436
+          ],
+          "confidence": 0.880010187625885,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "green"
+          },
+          "analysis_source": "fallback",
+          "attributes": {
+            "gender": "person",
+            "age": "adult",
+            "estimated_age": 0,
+            "emotion": "neutral",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "green",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.9270676691729324,
+            0.1384180790960452,
+            0.9992481203007518,
+            0.5254237288135594
+          ],
+          "confidence": 0.767609179019928,
+          "clothing_colors": {
+            "upper": "pink",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 43,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "pink",
+              "lower_color": "green",
+              "dominant_color": "pink"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 4,
+          "bbox": [
+            0.22857142857142856,
+            0.1172316384180791,
+            0.2669172932330827,
+            0.3615819209039548
+          ],
+          "confidence": 0.3680402934551239,
+          "clothing_colors": {
+            "upper": "red",
+            "lower": "red"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 24,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "red",
+              "lower_color": "red",
+              "dominant_color": "red"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 16,
+      "timestamp": 15.0,
+      "caption": "\"An outdoor city scene at dusk. A woman walks briskly down the street, dressed in a black top and carrying a white bag. An elderly man follows her, wearing a blue jacket and walking slowly. Further back, a young woman in a pink sweater is seen glancing at the camera. The area features storefronts wi...",
+      "frame_image_path": "images/video70_frame16.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.3526315789473684,
+            0.0014124293785310734,
+            0.5458646616541354,
+            0.8135593220338984
+          ],
+          "confidence": 0.9122430682182312,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "fallback",
+          "attributes": {
+            "gender": "person",
+            "age": "adult",
+            "estimated_age": 0,
+            "emotion": "neutral",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.7390977443609023,
+            0.17796610169491525,
+            0.8120300751879699,
+            0.4675141242937853
+          ],
+          "confidence": 0.7185808420181274,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 34,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.7345864661654136,
+            0.08192090395480225,
+            0.8142857142857143,
+            0.4689265536723164
+          ],
+          "confidence": 0.44825536012649536,
+          "clothing_colors": {
+            "upper": "orange",
+            "lower": "green"
+          },
+          "analysis_source": "fallback",
+          "attributes": {
+            "gender": "person",
+            "age": "adult",
+            "estimated_age": 0,
+            "emotion": "neutral",
+            "clothing": {
+              "upper_color": "orange",
+              "lower_color": "green",
+              "dominant_color": "orange"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 17,
+      "timestamp": 16.0,
+      "caption": "This image captures three frames of people walking on a sidewalk during the day. In Frame 1, a woman in a grey jacket and black pants walks away from the camera. In Frame 2, an elderly man with white hair is seen walking towards the camera, carrying a shopping bag. Frame 3 shows a woman in a pink sh...",
+      "frame_image_path": "images/video70_frame17.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.029323308270676692,
+            0.0,
+            0.26766917293233083,
+            0.9689265536723164
+          ],
+          "confidence": 0.8947813510894775,
+          "clothing_colors": {
+            "upper": "green",
+            "lower": "green"
+          },
+          "analysis_source": "fallback",
+          "attributes": {
+            "gender": "person",
+            "age": "adult",
+            "estimated_age": 0,
+            "emotion": "neutral",
+            "clothing": {
+              "upper_color": "green",
+              "lower_color": "green",
+              "dominant_color": "green"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.8308270676691729,
+            0.1977401129943503,
+            0.9060150375939849,
+            0.4717514124293785
+          ],
+          "confidence": 0.8626696467399597,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 29,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "yellow",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.6609022556390978,
+            0.07627118644067797,
+            0.7398496240601504,
+            0.6045197740112994
+          ],
+          "confidence": 0.8588557243347168,
+          "clothing_colors": {
+            "upper": "orange",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 31,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "orange",
+              "lower_color": "yellow",
+              "dominant_color": "orange"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 18,
+      "timestamp": 17.0,
+      "caption": "The image shows three frames of a city scene on a sidewalk during daylight hours. In the left frame, a man is walking away from the camera towards a building entrance. He appears to be wearing casual attire and has short hair. In the middle frame, there's a different individual, also male, who seems...",
+      "frame_image_path": "images/video70_frame18.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.08646616541353383,
+            0.00423728813559322,
+            0.2796992481203007,
+            0.7937853107344632
+          ],
+          "confidence": 0.9180607199668884,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 25,
+            "emotion": "neutral",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "yellow",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.8263157894736842,
+            0.10734463276836158,
+            0.9278195488721804,
+            0.5635593220338984
+          ],
+          "confidence": 0.8712461590766907,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 34,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "green",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.6789473684210526,
+            0.21610169491525424,
+            0.7360902255639098,
+            0.4675141242937853
+          ],
+          "confidence": 0.790573239326477,
+          "clothing_colors": {
+            "upper": "red",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 31,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "red",
+              "lower_color": "yellow",
+              "dominant_color": "red"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 4,
+          "bbox": [
+            0.9240601503759398,
+            0.1977401129943503,
+            0.9924812030075187,
+            0.4703389830508475
+          ],
+          "confidence": 0.620029866695404,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 33,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "yellow",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 19,
+      "timestamp": 18.0,
+      "caption": "\"A busy city street at dusk. Two men, one wearing a gray shirt and the other in a black shirt, walk in opposite directions near a storefront. A woman in a red top and another man in a blue shirt are engaged in conversation. People of various ages are seen walking on the sidewalk, suggesting an activ...",
+      "frame_image_path": "images/video70_frame19.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.13909774436090225,
+            0.002824858757062147,
+            0.2849624060150376,
+            0.8615819209039548
+          ],
+          "confidence": 0.8851301670074463,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "orange"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 30,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "orange",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.2796992481203007,
+            0.02824858757062147,
+            0.3977443609022556,
+            0.7019774011299436
+          ],
+          "confidence": 0.8824387788772583,
+          "clothing_colors": {
+            "upper": "orange",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 46,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "orange",
+              "lower_color": "yellow",
+              "dominant_color": "orange"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.9488721804511279,
+            0.1271186440677966,
+            0.9992481203007518,
+            0.5254237288135594
+          ],
+          "confidence": 0.817703127861023,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 26,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "green",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 4,
+          "bbox": [
+            0.8774436090225564,
+            0.1652542372881356,
+            0.9466165413533835,
+            0.4971751412429379
+          ],
+          "confidence": 0.785908579826355,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 39,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "green",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 5,
+          "bbox": [
+            0.8368421052631579,
+            0.17372881355932204,
+            0.8902255639097745,
+            0.4957627118644068
+          ],
+          "confidence": 0.7337917685508728,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 39,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "green",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 6,
+          "bbox": [
+            0.8007518796992481,
+            0.19915254237288135,
+            0.8466165413533835,
+            0.4576271186440678
+          ],
+          "confidence": 0.5525243282318115,
+          "clothing_colors": {
+            "upper": "red",
+            "lower": "orange"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 36,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "red",
+              "lower_color": "orange",
+              "dominant_color": "red"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 7,
+          "bbox": [
+            0.5165413533834586,
+            0.2867231638418079,
+            0.5578947368421052,
+            0.4491525423728814
+          ],
+          "confidence": 0.27523067593574524,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 35,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "yellow",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "normal",
+            "activity_level": "high"
+          }
+        }
+      ]
+    },
+    {
+      "image_id": 20,
+      "timestamp": 19.0,
+      "caption": "\"2019, 3 person(s) - An older man in a blue shirt walks alone along a city street, passing by a convenience store and a restaurant. A young adult woman in an orange top is carrying groceries. The street has a calm vibe during the day.\"",
+      "frame_image_path": "images/video70_frame20.jpg",
+      "objects": [
+        {
+          "class": "person",
+          "id": 1,
+          "bbox": [
+            0.32105263157894737,
+            0.0,
+            0.5293233082706766,
+            0.7909604519774012
+          ],
+          "confidence": 0.9116373658180237,
+          "clothing_colors": {
+            "upper": "cyan",
+            "lower": "yellow"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 33,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "cyan",
+              "lower_color": "yellow",
+              "dominant_color": "cyan"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 2,
+          "bbox": [
+            0.8669172932330828,
+            0.2062146892655367,
+            0.943609022556391,
+            0.481638418079096
+          ],
+          "confidence": 0.7951987981796265,
+          "clothing_colors": {
+            "upper": "red",
+            "lower": "orange"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "young_adult",
+            "estimated_age": 33,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "red",
+              "lower_color": "orange",
+              "dominant_color": "red"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 3,
+          "bbox": [
+            0.8067669172932331,
+            0.17937853107344634,
+            0.8781954887218045,
+            0.4858757062146893
+          ],
+          "confidence": 0.7367172241210938,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 39,
+            "emotion": "fear",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "green",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        },
+        {
+          "class": "person",
+          "id": 4,
+          "bbox": [
+            0.7676691729323308,
+            0.1807909604519774,
+            0.8142857142857143,
+            0.4872881355932203
+          ],
+          "confidence": 0.6544861793518066,
+          "clothing_colors": {
+            "upper": "yellow",
+            "lower": "green"
+          },
+          "analysis_source": "DeepFace",
+          "attributes": {
+            "gender": "man",
+            "age": "middle_aged",
+            "estimated_age": 40,
+            "emotion": "sad",
+            "clothing": {
+              "upper_color": "yellow",
+              "lower_color": "green",
+              "dominant_color": "yellow"
+            },
+            "pose": "unknown"
+          },
+          "scene_context": {
+            "scene_type": "indoor",
+            "lighting": "dark",
+            "activity_level": "high"
+          }
+        }
+      ]
+    }
+  ]
+}

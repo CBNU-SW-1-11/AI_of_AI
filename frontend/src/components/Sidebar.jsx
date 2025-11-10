@@ -95,13 +95,13 @@ const Sidebar = () => {
     }));
   };
 
-  const createNewChat = () => {
+  const createNewChat = (models = []) => {
     const id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
     const newItem = { 
       id, 
       title: "새 대화", 
       updatedAt: Date.now(),
-      selectedModels: [] // 빈 배열로 초기화
+      selectedModels: models
     };
     
     const existingItems = [...items];
@@ -181,6 +181,18 @@ const Sidebar = () => {
     }
   };
 
+  const handleNewChatClick = () => {
+    const event = new CustomEvent('open-model-selection', {
+      detail: {
+        onConfirm: (models) => {
+          if (!models || models.length === 0) return;
+          createNewChat(models);
+        }
+      }
+    });
+    window.dispatchEvent(event);
+  };
+
   return (
     <div
       className="w-64 border-r p-4 h-full flex-shrink-0 transition-all duration-300 overflow-y-auto"
@@ -201,7 +213,7 @@ const Sidebar = () => {
         </h2>
         <button
           aria-label="새 채팅"
-          onClick={createNewChat}
+          onClick={handleNewChatClick}
           className="p-2 rounded-lg transition-colors"
           style={{ color: "#2d3e2c" }}
           onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(93,124,91,0.08)")}

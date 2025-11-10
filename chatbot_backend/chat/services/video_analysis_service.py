@@ -82,10 +82,14 @@ class VideoAnalysisService:
         # DeepFace 사용 여부
         self.use_deepface = DEEPFACE_AVAILABLE
         
+        # GPT-4V 사용 여부 (비활성화 기본)
+        self.use_gpt4v = False
+        
         # 통계 변수
         self.stats = {
             'deepface_success': 0,
             'deepface_fail': 0,
+            'gpt4v_calls': 0,
             'ollama_calls': 0,
             'blip_calls': 0,
             'total_cost': 0.0
@@ -272,10 +276,12 @@ class VideoAnalysisService:
                 self.stats['deepface_fail'] += 1
         
         # 2단계: GPT-4V 분석 (신뢰도 낮거나 DeepFace 실패 시)
-        if self.use_gpt4v and self.stats['gpt4v_calls'] < 10:  # 최대 10회 제한
+        use_gpt4v = getattr(self, 'use_gpt4v', False)
+        gpt4v_calls = self.stats.get('gpt4v_calls', 0)
+        if use_gpt4v and gpt4v_calls < 10:  # 최대 10회 제한
             gpt4v_result = self._analyze_with_gpt4v(person_region)
             if gpt4v_result:
-                self.stats['gpt4v_calls'] += 1
+                self.stats['gpt4v_calls'] = gpt4v_calls + 1
                 self.stats['total_cost'] += 0.015
                 
                 return {
@@ -428,12 +434,18 @@ JSON만 답변해주세요."""
         try:
             h, w = person_region.shape[:2]
             
-            # 상의 영역 (상위 30-50%)
-            upper_region = person_region[int(h*0.3):int(h*0.5), :]
+            x_start = int(w * 0.2)
+            x_end = int(w * 0.8) if int(w * 0.8) > x_start else w
+            
+            upper_top = int(h * 0.2)
+            upper_bottom = int(h * 0.5)
+            lower_top = int(h * 0.5)
+            lower_bottom = int(h * 0.85)
+            
+            upper_region = person_region[upper_top:upper_bottom, x_start:x_end]
             upper_color = self._get_dominant_color_name(upper_region)
             
-            # 하의 영역 (하위 50-80%)
-            lower_region = person_region[int(h*0.5):int(h*0.8), :]
+            lower_region = person_region[lower_top:lower_bottom, x_start:x_end]
             lower_color = self._get_dominant_color_name(lower_region)
             
             return {
@@ -451,36 +463,62 @@ JSON만 답변해주세요."""
             if image_region.size == 0:
                 return 'unknown'
             
-            # HSV로 변환
             hsv = cv2.cvtColor(image_region, cv2.COLOR_BGR2HSV)
-            h_mean = np.mean(hsv[:, :, 0])
-            s_mean = np.mean(hsv[:, :, 1])
-            v_mean = np.mean(hsv[:, :, 2])
+            pixels = hsv.reshape(-1, 3)
             
-            # 채도가 낮으면 무채색
-            if s_mean < 30:
+            # 채도가 너무 낮은 픽셀 제외 (무채색 판별에 사용)
+            saturation_threshold = 35
+            high_sat_pixels = pixels[pixels[:, 1] >= saturation_threshold]
+            low_sat_pixels = pixels[pixels[:, 1] < saturation_threshold]
+            
+            if len(high_sat_pixels) == 0:
+                # 남은 픽셀이 모두 무채색이면 밝기에 따라 반환
+                v_mean = np.mean(pixels[:, 2])
                 if v_mean > 200:
                     return 'white'
-                elif v_mean < 50:
+                if v_mean < 50:
                     return 'black'
-                else:
-                    return 'gray'
+                return 'gray'
             
-            # 색상 분류 (개선된 범위)
-            if h_mean < 10 or h_mean > 170:
+            # K-means로 주요 색상 추출 (최대 3개 클러스터)
+            K = min(3, len(high_sat_pixels))
+            data = np.float32(high_sat_pixels)
+            criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0)
+            _, labels, centers = cv2.kmeans(data, K, None, criteria, 5, cv2.KMEANS_PP_CENTERS)
+            counts = np.bincount(labels.flatten(), minlength=K)
+            
+            # 채도 가중치로 가장 생생한 색 선택
+            center_s = centers[:, 1] / 255.0
+            weights = counts * (center_s + 0.1)
+            main_idx = int(np.argmax(weights))
+            h_mean, s_mean, v_mean = centers[main_idx]
+            
+            # 선택된 클러스터가 여전히 채도가 낮으면 무채색 처리
+            if s_mean < saturation_threshold:
+                if v_mean > 200:
+                    return 'white'
+                if v_mean < 50:
+                    return 'black'
+                return 'gray'
+            
+            # 색상 분류 (HSV Hue 범위는 0~180)
+            if h_mean < 10 or h_mean >= 175:
                 return 'red'
-            elif h_mean < 22:
+            if h_mean < 20:
                 return 'orange'
-            elif h_mean < 38:
+            if h_mean < 35:
                 return 'yellow'
-            elif h_mean < 85:
+            if h_mean < 85:
                 return 'green'
-            elif h_mean < 130:
+            if h_mean < 115:
+                return 'cyan'
+            if h_mean < 135:
                 return 'blue'
-            elif h_mean < 155:
+            if h_mean < 155:
                 return 'purple'
-            else:
+            if h_mean < 175:
                 return 'pink'
+            return 'red'
                 
         except Exception as e:
             logger.warning(f"색상 이름 변환 실패: {e}")
@@ -1328,6 +1366,7 @@ JSON만 답변해주세요."""
                 # backend_videochat 형식의 프레임 결과 생성
                 frame_result = {
                     'image_id': i + 1,
+                    'frame_id': i + 1,
                     'timestamp': frame['timestamp'],
                     'frame_image_path': frame_image_path,  # 프레임 이미지 경로 추가
                     'dominant_colors': frame.get('dominant_colors', []),  # 색상 분석 결과 추가
@@ -1469,7 +1508,7 @@ JSON만 답변해주세요."""
             
             # 기존 형식도 함께 저장 (호환성을 위해)
             with open(json_file_path, 'w', encoding='utf-8') as f:
-                json.dump(analysis_result, f, ensure_ascii=False, indent=2)
+                json.dump(analysis_result, f, ensure_ascii=False, indent=2, default=self._json_default)
             
             logger.info(f"📄 분석 결과 JSON 저장 완료: {json_file_path}")
             logger.info(f"📄 Detection DB 저장 완료: {detection_db_path}")
@@ -1498,11 +1537,11 @@ JSON만 답변해주세요."""
             
             # Detection DB 저장
             with open(detection_db_path, 'w', encoding='utf-8') as f:
-                json.dump(detection_db, f, ensure_ascii=False, indent=2)
+                json.dump(detection_db, f, ensure_ascii=False, indent=2, default=self._json_default)
             
             # Meta DB 저장
             with open(meta_db_path, 'w', encoding='utf-8') as f:
-                json.dump(meta_db, f, ensure_ascii=False, indent=2)
+                json.dump(meta_db, f, ensure_ascii=False, indent=2, default=self._json_default)
             
             return detection_db_path, meta_db_path
             
@@ -1528,7 +1567,7 @@ JSON만 답변해주세요."""
             # 프레임별 객체 정보 생성
             for frame_data in frame_results:
                 frame_info = {
-                    "image_id": frame_data.get('frame_id', 1),
+                    "image_id": frame_data.get('frame_id') or frame_data.get('image_id', 1),
                     "timestamp": frame_data.get('timestamp', 0),
                     "objects": []
                 }
@@ -1545,7 +1584,8 @@ JSON만 답변해주세요."""
                     }
                     
                     for person in persons:
-                        bbox = person.get('bbox', [0, 0, 0, 0])
+                        bbox_vals = person.get('bbox', [0, 0, 0, 0])
+                        bbox = [float(v) for v in bbox_vals]
                         person_object["bbox"].append(bbox)
                     
                     frame_info["objects"].append(person_object)
@@ -1554,12 +1594,15 @@ JSON만 답변해주세요."""
                 objects = frame_data.get('objects', [])
                 if objects:
                     for obj in objects:
+                        class_name = obj.get('class') or obj.get('class_name', 'unknown')
+                        bbox_vals = obj.get('bbox', [0, 0, 0, 0])
+                        bbox = [float(v) for v in bbox_vals]
                         obj_info = {
-                            "class": obj.get('class_name', 'unknown'),
+                            "class": class_name,
                             "num": 1,
                             "max_id": 1,
                             "tra_id": [1],
-                            "bbox": [obj.get('bbox', [0, 0, 0, 0])]
+                            "bbox": [bbox]
                         }
                         frame_info["objects"].append(obj_info)
                 
@@ -1592,9 +1635,10 @@ JSON만 답변해주세요."""
                 caption = self._generate_frame_caption(frame_data)
                 
                 frame_meta = {
-                    "image_id": frame_data.get('frame_id', 1),
+                    "image_id": frame_data.get('frame_id') or frame_data.get('image_id', 1),
                     "timestamp": frame_data.get('timestamp', 0),
                     "caption": caption,
+                    "frame_image_path": frame_data.get('frame_image_path'),
                     "objects": []
                 }
                 
@@ -2032,6 +2076,17 @@ Caption:"""
         except Exception as e:
             logger.error(f"❌ 오디오 요약 생성 실패: {e}")
             return None
+
+    @staticmethod
+    def _json_default(obj):
+        """numpy 타입 등을 JSON 직렬화 가능하게 변환"""
+        if isinstance(obj, (np.integer,)):
+            return int(obj)
+        if isinstance(obj, (np.floating,)):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return str(obj)
 
 # 전역 인스턴스 생성
 video_analysis_service = VideoAnalysisService()

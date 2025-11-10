@@ -93,7 +93,7 @@ const AIAnalysisModal = ({ isOpen, onClose, analysisData }) => {
                 <div className="border border-gray-200 bg-green-50 p-4 rounded-lg">
                   <div className="flex items-center gap-2 mb-3">
                     <ThumbsUp className="text-green-600" size={18} />
-                    <h4 className="font-semibold text-gray-800 text-sm">채택된 정보</h4>
+                    <h4 className="font-semibold text-gray-800 text-sm">참고한 정보</h4>
                   </div>
                   {analysis.adopted && analysis.adopted.length > 0 ? (
                     <ul className="space-y-2">
@@ -113,7 +113,7 @@ const AIAnalysisModal = ({ isOpen, onClose, analysisData }) => {
                 <div className="border border-gray-200 bg-red-50 p-4 rounded-lg">
                   <div className="flex items-center gap-2 mb-3">
                     <ThumbsDown className="text-red-600" size={18} />
-                    <h4 className="font-semibold text-gray-800 text-sm">틀린 정보</h4>
+                    <h4 className="font-semibold text-gray-800 text-sm">제외한 정보</h4>
                   </div>
                   {analysis.rejected && analysis.rejected.length > 0 ? (
                     <ul className="space-y-2">

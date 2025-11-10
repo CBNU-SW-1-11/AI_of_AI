@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { X, Sparkles } from 'lucide-react';
 
-const ModelSelectionModal = ({ isOpen, onClose, selectedModels, onModelSelect }) => {
+const ModelSelectionModal = ({ isOpen, onClose, selectedModels, onModelSelect, onConfirm }) => {
   // 1) 카테고리별 모델 그룹 (Gemini, Claude, Clova, GPT 순서)
   const modelGroups = {
     Gemini: [
@@ -61,6 +61,15 @@ const ModelSelectionModal = ({ isOpen, onClose, selectedModels, onModelSelect })
       if (selectedModels.length > 1) onModelSelect(selectedModels.filter((id) => id !== modelId));
     } else {
       if (selectedModels.length < 3) onModelSelect([...selectedModels, modelId]);
+    }
+  };
+
+  const handleConfirm = () => {
+    if (selectedModels.length === 0) return;
+    if (onConfirm) {
+      onConfirm(selectedModels);
+    } else if (onClose) {
+      onClose();
     }
   };
 
@@ -269,7 +278,7 @@ const ModelSelectionModal = ({ isOpen, onClose, selectedModels, onModelSelect })
 
         <div className="p-6 border-t flex justify-center">
           <button
-            onClick={onClose}
+            onClick={handleConfirm}
             disabled={selectedModels.length === 0}
             className={`py-3 px-8 rounded-xl font-semibold transition-colors ${
               selectedModels.length === 0 ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'text-white'
