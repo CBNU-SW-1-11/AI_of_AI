@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle, XCircle, TrendingUp, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { TrendingUp, ThumbsUp, ThumbsDown } from 'lucide-react';
 
 const AIAnalysisModal = ({ isOpen, onClose, analysisData }) => {
   if (!isOpen) return null;
@@ -72,11 +72,9 @@ const AIAnalysisModal = ({ isOpen, onClose, analysisData }) => {
               {/* AI Name Header */}
               <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
                 <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                  {analysis.accuracy === '✅' ? (
-                    <CheckCircle className="text-green-600" size={22} />
-                  ) : (
-                    <XCircle className="text-red-600" size={22} />
-                  )}
+                  <span className={analysis.accuracy === '✅' ? 'text-green-600' : 'text-red-600'}>
+                    {analysis.accuracy}
+                  </span>
                   {aiName}
                 </h3>
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-lg">
