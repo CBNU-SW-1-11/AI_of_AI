@@ -183,18 +183,6 @@ const SimilarityDetailModal = ({ isOpen, onClose, similarityData }) => {
               )}
             </div>
 
-            {/* 개발자 정보 */}
-            <div className="border-t border-gray-200 pt-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                <Code className="mr-2 text-gray-600" size={20} />
-                개발자 정보
-              </h3>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <pre className="bg-gray-900 text-green-400 p-4 rounded-lg overflow-auto max-h-48 text-xs font-mono">
-                  {JSON.stringify(similarityData, null, 2)}
-                </pre>
-              </div>
-            </div>
             </div>
           </div>
         )}
