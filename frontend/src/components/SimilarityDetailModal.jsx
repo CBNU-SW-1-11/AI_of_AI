@@ -21,13 +21,13 @@ const SimilarityDetailModal = ({ isOpen, onClose, similarityData }) => {
   } = similarityData || {};
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-      <div className="bg-white rounded-lg p-6 w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg w-full max-w-5xl max-h-[90vh] shadow-2xl flex flex-col">
         {/* 헤더 */}
-        <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200">
+        <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
           <h2 className="text-2xl font-semibold text-gray-800">유사도 분석 상세 결과</h2>
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             className="text-gray-400 hover:text-gray-600 text-2xl font-light transition-colors"
           >
             ×
@@ -36,16 +36,19 @@ const SimilarityDetailModal = ({ isOpen, onClose, similarityData }) => {
 
         {/* 데이터 없음 표시 */}
         {noDataAvailable ? (
-          <div className="p-4 bg-yellow-50 text-yellow-800 rounded-lg">
+          <div className="flex-1 overflow-y-auto px-6 py-6">
+            <div className="p-4 bg-yellow-50 text-yellow-800 rounded-lg">
             <p>아직 이 메시지에 대한 유사도 분석 데이터가 준비되지 않았습니다.</p>
             <p>잠시 후 다시 시도해주세요.</p>
             <p className="mt-4 text-sm font-semibold">디버그 정보:</p>
             <pre className="bg-gray-100 p-2 rounded text-xs overflow-auto mt-2">
               {JSON.stringify({ messageId, debugInfo, availableDataKeys }, null, 2)}
             </pre>
+            </div>
           </div>
         ) : (
-          <div className="space-y-8">
+          <div className="flex-1 overflow-y-auto px-6 py-6">
+            <div className="space-y-8">
 
             {/* 유사 그룹 */}
             <div className="mb-8">
@@ -191,6 +194,7 @@ const SimilarityDetailModal = ({ isOpen, onClose, similarityData }) => {
                   {JSON.stringify(similarityData, null, 2)}
                 </pre>
               </div>
+            </div>
             </div>
           </div>
         )}
