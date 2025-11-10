@@ -49,13 +49,8 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-# CORS 설정 - credentials와 함께 사용할 때는 와일드카드 사용 불가
-CORS_ALLOW_ALL_ORIGINS = False
-
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://localhost:3002",
-]
+# CORS 설정
+CORS_ALLOW_ALL_ORIGINS = True
 
 # credentials 허용
 CORS_ALLOW_CREDENTIALS = True
@@ -106,7 +101,7 @@ KAKAO_REDIRECT_URI = os.getenv('KAKAO_REDIRECT_URI', 'http://localhost:3000/auth
 
 NAVER_CLIENT_ID = os.getenv('NAVER_CLIENT_ID', '')
 NAVER_CLIENT_SECRET = os.getenv('NAVER_CLIENT_SECRET', '')
-NAVER_REDIRECT_URI = os.getenv('NAVER_REDIRECT_URI', 'http://localhost:3000/')
+NAVER_REDIRECT_URI = os.getenv('NAVER_REDIRECT_URI', 'http://localhost:3000/auth/naver/callback')
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',

@@ -1,11 +1,17 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useDispatch } from 'react-redux';
 import { loginSuccess } from '../store/authSlice';
 
 const KakaoCallback = () => {
   const dispatch = useDispatch();
+  const hasHandledRef = useRef(false);
 
   useEffect(() => {
+    if (hasHandledRef.current) {
+      return;
+    }
+    hasHandledRef.current = true;
+
     const handleKakaoCallback = async () => {
       try {
         // URL에서 코드 추출
@@ -29,26 +35,38 @@ const KakaoCallback = () => {
 
         // 코드를 액세스 토큰으로 교환
         const clientId = process.env.REACT_APP_KAKAO_CLIENT_ID || '8bfca9df8364fead1243d41c773ec5a2';
-        const redirectUri = process.env.REACT_APP_KAKAO_REDIRECT_URI || 'http://localhost:3000';
+        let redirectUri = process.env.REACT_APP_KAKAO_REDIRECT_URI || `${window.location.origin}/auth/kakao/callback`;
+        if (!redirectUri.includes('/auth/kakao/callback')) {
+          const normalized = redirectUri.replace(/\/?$/, '');
+          redirectUri = `${normalized}/auth/kakao/callback`;
+        }
+
+        const tokenParams = new URLSearchParams({
+          grant_type: 'authorization_code',
+          client_id: clientId,
+          redirect_uri: redirectUri,
+          code: code,
+        });
+        const clientSecret = process.env.REACT_APP_KAKAO_CLIENT_SECRET;
+        if (clientSecret) {
+          tokenParams.append('client_secret', clientSecret);
+        }
 
         const tokenResponse = await fetch('https://kauth.kakao.com/oauth/token', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
           },
-          body: new URLSearchParams({
-            grant_type: 'authorization_code',
-            client_id: clientId,
-            redirect_uri: redirectUri,
-            code: code,
-          }),
+          body: tokenParams,
         });
 
+        const tokenData = await tokenResponse.json();
+
         if (!tokenResponse.ok) {
-          throw new Error('카카오 토큰 교환 실패');
+          const errorDescription = tokenData.error_description || JSON.stringify(tokenData);
+          throw new Error(`카카오 토큰 교환 실패: ${errorDescription}`);
         }
 
-        const tokenData = await tokenResponse.json();
         const accessToken = tokenData.access_token;
 
         // 백엔드로 토큰 전송

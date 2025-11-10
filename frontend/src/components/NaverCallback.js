@@ -1,11 +1,17 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useDispatch } from 'react-redux';
 import { loginSuccess } from '../store/authSlice';
 
 const NaverCallback = () => {
   const dispatch = useDispatch();
+  const hasHandledRef = useRef(false);
 
   useEffect(() => {
+    if (hasHandledRef.current) {
+      return;
+    }
+    hasHandledRef.current = true;
+
     const handleNaverCallback = async () => {
       try {
         // URL에서 코드 추출
@@ -37,45 +43,26 @@ const NaverCallback = () => {
           return;
         }
 
-        // 코드를 액세스 토큰으로 교환
-        const clientId = process.env.REACT_APP_NAVER_CLIENT_ID;
-        const clientSecret = process.env.REACT_APP_NAVER_CLIENT_SECRET;
-        const redirectUri = process.env.REACT_APP_NAVER_REDIRECT_URI || 'http://localhost:3000';
-
-        if (!clientId || !clientSecret) {
-          throw new Error('네이버 클라이언트 설정이 누락되었습니다.');
+        // 백엔드로 code/state 전달하여 토큰 교환 및 사용자 정보 처리
+        const clientId = process.env.REACT_APP_NAVER_CLIENT_ID || '';
+        const clientSecret = process.env.REACT_APP_NAVER_CLIENT_SECRET || '';
+        let redirectUri = process.env.REACT_APP_NAVER_REDIRECT_URI || `${window.location.origin}/auth/naver/callback`;
+        if (!redirectUri.includes('/auth/naver/callback')) {
+          const normalized = redirectUri.replace(/\/?$/, '');
+          redirectUri = `${normalized}/auth/naver/callback`;
         }
 
-        const tokenResponse = await fetch('https://nid.naver.com/oauth2.0/token', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams({
-            grant_type: 'authorization_code',
-            client_id: clientId,
-            client_secret: clientSecret,
-            redirect_uri: redirectUri,
-            code: code,
-            state: state,
-          }),
-        });
-
-        if (!tokenResponse.ok) {
-          throw new Error('네이버 토큰 교환 실패');
-        }
-
-        const tokenData = await tokenResponse.json();
-        const accessToken = tokenData.access_token;
-
-        // 백엔드로 토큰 전송
         const response = await fetch('http://localhost:8000/api/auth/naver/callback/', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            access_token: accessToken
+            code,
+            state,
+            client_id: clientId,
+            client_secret: clientSecret,
+            redirect_uri: redirectUri,
           }),
         });
 

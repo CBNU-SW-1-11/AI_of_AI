@@ -91,7 +91,11 @@ const Loginbar = ({ onClose }) => {
   // ✅ 카카오: 리다이렉트 방식으로 변경
   const handleKakaoLogin = useCallback(() => {
     const clientId = process.env.REACT_APP_KAKAO_CLIENT_ID || '8bfca9df8364fead1243d41c773ec5a2';
-    const redirectUri = process.env.REACT_APP_KAKAO_REDIRECT_URI || 'http://localhost:3000';
+    let redirectUri = process.env.REACT_APP_KAKAO_REDIRECT_URI || `${window.location.origin}/auth/kakao/callback`;
+    if (!redirectUri.includes('/auth/kakao/callback')) {
+      const normalized = redirectUri.replace(/\/?$/, '');
+      redirectUri = `${normalized}/auth/kakao/callback`;
+    }
     
     const q = buildQuery({
       response_type: 'code',
@@ -110,10 +114,15 @@ const Loginbar = ({ onClose }) => {
   // ✅ 네이버: 리다이렉트 방식으로 변경
   const handleNaverLogin = useCallback(() => {
     const clientId = process.env.REACT_APP_NAVER_CLIENT_ID;
-    const redirectUri = process.env.REACT_APP_NAVER_REDIRECT_URI || 'http://localhost:3000';
+    let redirectUri = process.env.REACT_APP_NAVER_REDIRECT_URI || `${window.location.origin}/auth/naver/callback`;
+    if (!redirectUri.includes('/auth/naver/callback')) {
+      const normalized = redirectUri.replace(/\/?$/, '');
+      redirectUri = `${normalized}/auth/naver/callback`;
+    }
     
     if (!clientId) {
       console.warn('NAVER env가 비어 있습니다. REACT_APP_NAVER_CLIENT_ID 확인');
+      alert('네이버 로그인 설정이 완료되지 않았습니다. 환경변수 REACT_APP_NAVER_CLIENT_ID를 확인해주세요.');
       return;
     }
     

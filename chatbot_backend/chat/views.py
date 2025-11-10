@@ -3106,6 +3106,53 @@ def naver_callback(request):
     try:
         data = request.data
         access_token = data.get('access_token')
+        code = data.get('code')
+        state = data.get('state')
+        client_id_override = data.get('client_id')
+        client_secret_override = data.get('client_secret')
+        redirect_uri_override = data.get('redirect_uri')
+        
+        if not access_token:
+            if not code:
+                return Response(
+                    {'error': 'access_token 또는 code가 제공되지 않았습니다'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            client_id = client_id_override or os.getenv('NAVER_CLIENT_ID') or getattr(settings, 'NAVER_CLIENT_ID', '')
+            client_secret = client_secret_override or os.getenv('NAVER_CLIENT_SECRET') or getattr(settings, 'NAVER_CLIENT_SECRET', '')
+            redirect_uri = redirect_uri_override or os.getenv('NAVER_REDIRECT_URI') or getattr(settings, 'NAVER_REDIRECT_URI', '')
+            
+            if not client_id or not client_secret:
+                return Response(
+                    {'error': '네이버 클라이언트 설정이 누락되었습니다'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            token_response = requests.post(
+                'https://nid.naver.com/oauth2.0/token',
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                data={
+                    'grant_type': 'authorization_code',
+                    'client_id': client_id,
+                    'client_secret': client_secret,
+                    'redirect_uri': redirect_uri,
+                    'code': code,
+                    'state': state or '',
+                }
+            )
+            
+            token_data = token_response.json()
+            if token_response.status_code != 200 or not token_data.get('access_token'):
+                return Response(
+                    {
+                        'error': '네이버 토큰 교환 실패',
+                        'detail': token_data
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            access_token = token_data.get('access_token')
         
         if not access_token:
             return Response(
