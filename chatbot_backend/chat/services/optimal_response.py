@@ -198,6 +198,218 @@ def quick_wikipedia_search(query):
         return None
 
 
+def get_premium_models_to_call(currently_used_models):
+    """사용 중인 모델을 제외한 프리미엄 모델 목록 반환
+    
+    Args:
+        currently_used_models: 현재 사용 중인 모델 리스트 (예: ['GPT-4o', 'Gemini-2.0-Flash-Lite'])
+    
+    Returns:
+        추가로 호출할 프리미엄 모델 리스트
+    """
+    # 프리미엄 모델 정의 (최상위 모델들)
+    premium_models = ['GPT-5', 'Gemini-2.5-Pro', 'Claude-3.7-Sonnet']
+    
+    # 모델명 정규화 (대소문자, 하이픈 등 통일)
+    def normalize_model_name(name):
+        return name.lower().replace('-', '').replace('.', '').replace('_', '')
+    
+    # 현재 사용 중인 모델 정규화
+    used_normalized = {normalize_model_name(model) for model in currently_used_models}
+    
+    # 사용하지 않는 프리미엄 모델 필터링
+    models_to_call = []
+    for premium in premium_models:
+        if normalize_model_name(premium) not in used_normalized:
+            models_to_call.append(premium)
+    
+    print(f"🎯 추가 호출할 프리미엄 모델: {models_to_call}")
+    return models_to_call
+
+
+async def call_additional_premium_models(user_message, premium_models, session_id=None):
+    """프리미엄 모델들을 비동기로 호출
+    
+    Args:
+        user_message: 사용자 질문
+        premium_models: 호출할 프리미엄 모델 리스트
+        session_id: 세션 ID
+    
+    Returns:
+        {모델명: 응답} 딕셔너리
+    """
+    import aiohttp
+    
+    # 엔드포인트 매핑
+    all_llm_endpoints = {
+        'GPT-5': 'http://localhost:8000/chat/gpt-5/',
+        'GPT-5-Mini': 'http://localhost:8000/chat/gpt-5-mini/',
+        'GPT-4.1': 'http://localhost:8000/chat/gpt-4.1/',
+        'GPT-4.1-Mini': 'http://localhost:8000/chat/gpt-4.1-mini/',
+        'GPT-4o': 'http://localhost:8000/chat/gpt-4o/',
+        'GPT-4o-Mini': 'http://localhost:8000/chat/gpt-4o-mini/',
+        'GPT-4-Turbo': 'http://localhost:8000/chat/gpt-4-turbo/',
+        'GPT-3.5-Turbo': 'http://localhost:8000/chat/gpt-3.5-turbo/',
+        'Gemini-2.5-Pro': 'http://localhost:8000/chat/gemini-2.5-pro/',
+        'Gemini-2.5-Flash': 'http://localhost:8000/chat/gemini-2.5-flash/',
+        'Gemini-2.0-Flash-Exp': 'http://localhost:8000/chat/gemini-2.0-flash-exp/',
+        'Gemini-2.0-Flash-Lite': 'http://localhost:8000/chat/gemini-2.0-flash-lite/',
+        'Claude-4-Opus': 'http://localhost:8000/chat/claude-4-opus/',
+        'Claude-3.7-Sonnet': 'http://localhost:8000/chat/claude-3.7-sonnet/',
+        'Claude-3.5-Sonnet': 'http://localhost:8000/chat/claude-3.5-sonnet/',
+        'Claude-3.5-Haiku': 'http://localhost:8000/chat/claude-3.5-haiku/',
+        'Claude-3-Opus': 'http://localhost:8000/chat/claude-3-opus/',
+        'HCX-003': 'http://localhost:8000/chat/clova-hcx-003/',
+        'HCX-DASH-001': 'http://localhost:8000/chat/clova-hcx-dash-001/',
+    }
+    
+    responses = {}
+    
+    async def fetch_response(session, ai_name, endpoint):
+        try:
+            payload = {'message': user_message, 'user_id': session_id or 'system'}
+            async with session.post(endpoint, json=payload, timeout=30) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    response_content = result.get('response', '응답 없음')
+                    print(f"✅ [추가] {ai_name} 응답 수신: {len(str(response_content))}자")
+                    return ai_name, response_content
+                else:
+                    error_text = await response.text()
+                    friendly_msg = get_user_friendly_error_message(Exception(f"HTTP {response.status}"))
+                    return ai_name, friendly_msg
+        except Exception as e:
+            friendly_msg = get_user_friendly_error_message(e)
+            return ai_name, friendly_msg
+    
+    async with aiohttp.ClientSession() as session:
+        tasks = []
+        for model in premium_models:
+            if model in all_llm_endpoints:
+                endpoint = all_llm_endpoints[model]
+                tasks.append(fetch_response(session, model, endpoint))
+        
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for result in results:
+            if isinstance(result, tuple):
+                ai_name, response = result
+                responses[ai_name] = response
+    
+    # 에러 메시지 필터링
+    error_patterns = [
+        "네트워크 연결에 문제가", "요청 시간이 초과", "서버에 일시적인 문제",
+        "API 인증에 실패", "사용량 한도를 초과", "연결할 수 없습니다"
+    ]
+    
+    valid_responses = {}
+    for ai_name, response in responses.items():
+        response_str = str(response)
+        is_error = any(pattern in response_str for pattern in error_patterns)
+        if len(response_str) < 50 and any(kw in response_str.lower() for kw in ["timeout", "error", "오류"]):
+            is_error = True
+        
+        if not is_error:
+            valid_responses[ai_name] = response
+    
+    print(f"📊 [추가] 유효한 프리미엄 모델 응답: {len(valid_responses)}개")
+    return valid_responses
+
+
+def apply_voting_system(all_responses, user_question):
+    """보팅 시스템 적용: 가장 많은 모델이 동의하는 답변 선택
+    
+    Args:
+        all_responses: {모델명: 응답} 딕셔너리
+        user_question: 사용자 질문
+    
+    Returns:
+        최적 답변 결과
+    """
+    print(f"\n🗳️ 보팅 시스템 적용 시작")
+    print(f"   참여 모델: {list(all_responses.keys())}")
+    
+    # 1. 각 응답의 핵심 내용 추출
+    response_summaries = {}
+    for model, response in all_responses.items():
+        # 첫 문장이나 핵심 문장 추출 (간단한 요약)
+        sentences = extract_sentences_from_response(response)
+        summary = sentences[0] if sentences else response[:200]
+        response_summaries[model] = normalize_text(summary)
+    
+    # 2. 응답 간 유사도 계산 및 그룹화
+    from collections import defaultdict
+    similarity_groups = defaultdict(list)
+    processed = set()
+    
+    models = list(all_responses.keys())
+    for i, model1 in enumerate(models):
+        if model1 in processed:
+            continue
+        
+        group = [model1]
+        summary1 = response_summaries[model1]
+        
+        for model2 in models[i+1:]:
+            if model2 in processed:
+                continue
+            
+            summary2 = response_summaries[model2]
+            similarity = similarity_ratio(summary1, summary2)
+            
+            # 유사도 60% 이상이면 같은 그룹으로 간주
+            if similarity >= 0.6:
+                group.append(model2)
+                processed.add(model2)
+        
+        processed.add(model1)
+        similarity_groups[model1] = group
+    
+    # 3. 가장 많은 모델이 동의하는 그룹 찾기
+    largest_group = max(similarity_groups.values(), key=len)
+    representative_model = largest_group[0]
+    
+    print(f"\n📊 보팅 결과:")
+    for leader, members in similarity_groups.items():
+        if len(members) > 1:
+            print(f"   그룹 ({len(members)}개 모델): {members}")
+    
+    print(f"\n🏆 최다 득표 그룹: {largest_group} ({len(largest_group)}표)")
+    
+    # 4. 결과 생성
+    optimal_answer = all_responses[representative_model]
+    
+    result = {
+        "최적의_답변": optimal_answer,
+        "llm_검증_결과": {},
+        "심판모델": "Voting System",
+        "상태": "보팅 완료",
+        "신뢰도": str(int((len(largest_group) / len(all_responses)) * 100)),
+        "보팅_결과": {
+            "총_모델_수": len(all_responses),
+            "최다_득표": len(largest_group),
+            "득표_모델": largest_group,
+            "그룹_정보": {k: v for k, v in similarity_groups.items()}
+        },
+        "원본_응답": all_responses
+    }
+    
+    # 각 모델의 검증 결과 생성
+    for model in all_responses.keys():
+        sentences = extract_sentences_from_response(all_responses[model])
+        is_winner = model in largest_group
+        
+        result["llm_검증_결과"][model] = {
+            "정확성": "✅ 다수결 채택" if is_winner else "❌ 소수 의견",
+            "오류": "없음" if is_winner else "다수 의견과 불일치",
+            "신뢰도": str(int((len(largest_group) / len(all_responses)) * 100)) if is_winner else "30",
+            "채택된_정보": sentences[:3] if is_winner else [],
+            "제외된_정보": [] if is_winner else sentences[:2]
+        }
+    
+    return result
+
+
 def collect_multi_llm_responses(user_message, judge_model="GPT-4o", selected_models=None, question_type=None, session_id=None, clear_history=False):
     """1단계: 선택된 LLM들에게 병렬 질의 후 심판 모델로 검증
     
@@ -347,7 +559,7 @@ def collect_multi_llm_responses(user_message, judge_model="GPT-4o", selected_mod
             raise ValueError("모든 LLM 요청이 실패했습니다.")
         
         print(f"📊 유효한 응답: {len(valid_responses)}개")
-        final_result = judge_and_generate_optimal_response(valid_responses, user_message, judge_model, question_type)
+        final_result = judge_and_generate_optimal_response(valid_responses, user_message, judge_model, question_type, session_id)
         return final_result
         
     except Exception as e:
@@ -364,7 +576,7 @@ def detect_conflicts_in_responses(llm_responses):
         "dates": defaultdict(list),
         "locations": defaultdict(list), 
         "numbers": defaultdict(list),
-        "names": defaultdict(list)  # 이름 추가
+        "names": defaultdict(list)
     }
     
     for model_name, response in llm_responses.items():
@@ -524,8 +736,8 @@ def extract_valid_sentences(sentence_list, original_response, ai_name):
     return valid_sentences
 
 
-def judge_and_generate_optimal_response(llm_responses, user_question, judge_model="GPT-5", question_type=None):
-    """하이브리드 검증 시스템 (Wikipedia 검증 포함)"""
+def judge_and_generate_optimal_response(llm_responses, user_question, judge_model="GPT-5", question_type=None, session_id=None):
+    """하이브리드 검증 시스템 (Wikipedia 검증 + 프리미엄 모델 보팅)"""
     try:
         print(f"\n🔍 하이브리드 검증 시작: {user_question}")
         
@@ -549,6 +761,8 @@ def judge_and_generate_optimal_response(llm_responses, user_question, judge_mode
         
         # 🚨 Wikipedia 검증 (사실 질문이고 상호모순이 있을 때)
         wikipedia_info = None
+        use_voting = False
+        
         if question_type == "factual" and len(conflicts) > 0:
             print(f"\n🌐 상호모순 감지됨! Wikipedia 검증 시작...")
             wikipedia_info = quick_wikipedia_search(user_question)
@@ -556,8 +770,48 @@ def judge_and_generate_optimal_response(llm_responses, user_question, judge_mode
             if wikipedia_info:
                 print(f"✅ Wikipedia 검증 완료: {wikipedia_info['title']}")
             else:
-                print(f"⚠️ Wikipedia 검증 실패")
+                print(f"⚠️ Wikipedia 검증 실패 - 프리미엄 모델 보팅 시스템 활성화")
+                use_voting = True
         
+        # 🗳️ Wikipedia가 없으면 프리미엄 모델 추가 호출 및 보팅
+        if use_voting:
+            print(f"\n🎯 프리미엄 모델 추가 호출 시작...")
+            
+            # 현재 사용 중인 모델 목록
+            currently_used = list(llm_responses.keys())
+            print(f"   현재 사용 중인 모델: {currently_used}")
+            
+            # 추가 호출할 프리미엄 모델 결정
+            premium_models_to_call = get_premium_models_to_call(currently_used)
+            
+            if premium_models_to_call:
+                print(f"   추가 호출할 모델: {premium_models_to_call}")
+                
+                # 프리미엄 모델 비동기 호출
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                premium_responses = loop.run_until_complete(
+                    call_additional_premium_models(user_question, premium_models_to_call, session_id)
+                )
+                loop.close()
+                
+                if premium_responses:
+                    print(f"✅ {len(premium_responses)}개 프리미엄 모델 응답 수신")
+                    
+                    # 기존 응답과 프리미엄 응답 합치기
+                    all_responses = {**llm_responses, **premium_responses}
+                    
+                    # 보팅 시스템 적용
+                    voting_result = apply_voting_system(all_responses, user_question)
+                    print(f"\n🏆 보팅 완료: {voting_result['보팅_결과']['득표_모델']}")
+                    
+                    return voting_result
+                else:
+                    print(f"⚠️ 프리미엄 모델 응답 실패 - 기본 Judge 시스템 사용")
+            else:
+                print(f"⚠️ 추가 호출할 프리미엄 모델 없음 - 기본 Judge 시스템 사용")
+        
+        # Wikipedia 검증이 있거나 보팅이 불필요한 경우 기존 Judge 시스템 사용
         # 프롬프트 구성
         model_sections = []
         for model_name, response in llm_responses.items():
