@@ -32,6 +32,8 @@ import io
 import PyPDF2
 from PIL import Image
 import pytesseract
+import hashlib
+import time
 # import cv2  # NumPy 호환성 문제로 조건부 import
 # import numpy as np  # NumPy 호환성 문제로 조건부 import
 from pdf2image import convert_from_bytes
@@ -47,6 +49,7 @@ from django.contrib.auth import get_user_model
 from chat.models import User, SocialAccount
 from django.conf import settings
 import json
+import ast
 import logging
 import re
 from datetime import datetime, timedelta
@@ -93,6 +96,88 @@ def get_openai_completion_limit(model_name: str) -> int:
         if key in normalized_name:
             return limit
     return DEFAULT_OPENAI_COMPLETION_LIMIT
+
+
+def get_user_friendly_error_message(error: Exception) -> str:
+    """API 예외를 사용자가 이해하기 쉬운 한국어 메시지로 변환"""
+    raw_message = str(error) if error else ""
+    lower_message = raw_message.lower()
+    error_payload = None
+
+    if raw_message:
+        json_like_match = re.search(r"\{.*\}", raw_message, re.DOTALL)
+        if json_like_match:
+            json_like_text = json_like_match.group(0)
+            try:
+                error_payload = ast.literal_eval(json_like_text)
+            except (ValueError, SyntaxError):
+                try:
+                    error_payload = json.loads(json_like_text)
+                except json.JSONDecodeError:
+                    error_payload = None
+
+    if isinstance(error_payload, dict):
+        payload_error = error_payload.get("error") or {}
+        payload_code = payload_error.get("code") or error_payload.get("code")
+        payload_message = payload_error.get("message") or error_payload.get("message") or ""
+    else:
+        payload_code = None
+        payload_message = ""
+
+    combined_message = f"{payload_code or ''} {payload_message}".lower()
+
+    # 429 오류 (Rate Limit)
+    if "429" in raw_message or any(keyword in (lower_message or "") for keyword in ["rate_limit_exceeded", "tokens per min", "requests per min", "tpm limit", "rate limit", "quota exceeded", "quota_exceeded"]) \
+            or any(keyword in combined_message for keyword in ["rate_limit_exceeded", "tokens per min", "requests per min", "tpm limit", "rate limit", "quota exceeded", "quota_exceeded"]):
+        return "모델 사용량이 초과되었습니다. 다른 모델을 사용해주세요."
+
+    # 401 오류 (인증 실패)
+    if "401" in raw_message or any(keyword in (lower_message or "") for keyword in ["invalid_api_key", "incorrect api key", "authentication error", "unauthorized", "invalid key"]) \
+            or any(keyword in combined_message for keyword in ["invalid_api_key", "incorrect api key", "authentication error", "unauthorized", "invalid key"]):
+        return "API 인증에 실패했습니다. API 키를 다시 확인해 주세요."
+
+    # 403 오류 (권한 없음)
+    if "403" in raw_message or any(keyword in (lower_message or "") for keyword in ["forbidden", "access denied", "permission denied"]) \
+            or any(keyword in combined_message for keyword in ["forbidden", "access denied", "permission denied"]):
+        return "접근 권한이 없습니다. API 키 권한을 확인해 주세요."
+
+    # 400 오류 (잘못된 요청)
+    if "400" in raw_message or any(keyword in (lower_message or "") for keyword in ["bad request", "invalid request", "malformed request"]) \
+            or any(keyword in combined_message for keyword in ["bad request", "invalid request", "malformed request"]):
+        return "잘못된 요청입니다. 입력 내용을 확인해 주세요."
+
+    # 404 오류 (리소스 없음)
+    if "404" in raw_message or any(keyword in (lower_message or "") for keyword in ["not found", "resource not found", "model not found"]) \
+            or any(keyword in combined_message for keyword in ["not found", "resource not found", "model not found"]):
+        return "요청한 리소스를 찾을 수 없습니다. 모델 이름을 확인해 주세요."
+
+    # 500/502/503 오류 (서버 오류)
+    if any(code in raw_message for code in ["500", "502", "503", "504"]) or any(keyword in (lower_message or "") for keyword in ["internal server error", "bad gateway", "service unavailable", "gateway timeout", "server error"]) \
+            or any(keyword in combined_message for keyword in ["internal server error", "bad gateway", "service unavailable", "gateway timeout", "server error"]):
+        return "서버에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해 주세요."
+
+    # 컨텍스트 길이 초과
+    if any(keyword in (lower_message or "") for keyword in ["context_length_exceeded", "maximum context length", "too many tokens", "context window", "token limit exceeded"]) \
+            or any(keyword in combined_message for keyword in ["context_length_exceeded", "maximum context length", "too many tokens", "context window", "token limit exceeded"]):
+        return "대화 길이가 너무 깁니다. 메시지를 줄이거나 새 대화를 시작해 주세요."
+
+    # 네트워크 오류
+    if any(keyword in (lower_message or "") for keyword in ["connection", "network", "timeout", "connection error", "network error", "connection refused", "connection reset"]) \
+            or any(keyword in combined_message for keyword in ["connection", "network", "timeout", "connection error", "network error"]):
+        return "네트워크 연결에 문제가 발생했습니다. 인터넷 연결을 확인하고 잠시 후 다시 시도해 주세요."
+
+    # 안전 필터 (Gemini)
+    if any(keyword in (lower_message or "") for keyword in ["safety", "safety filter", "blocked", "content filter", "harmful content"]) \
+            or any(keyword in combined_message for keyword in ["safety", "safety filter", "blocked", "content filter"]):
+        return "콘텐츠 정책에 의해 차단되었습니다. 다른 질문을 시도해 주세요."
+
+    # 할당량 초과 (다양한 형태)
+    if any(keyword in (lower_message or "") for keyword in ["quota", "limit exceeded", "usage limit", "billing", "insufficient quota"]) \
+            or any(keyword in combined_message for keyword in ["quota", "limit exceeded", "usage limit", "billing", "insufficient quota"]):
+        return "사용량 한도를 초과했습니다. 다른 모델을 사용하거나 잠시 후 다시 시도해 주세요."
+
+    # 기본 오류 메시지 (원본 오류 코드 숨김)
+    return "오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
 
 
 # 파일 처리 유틸리티 함수들
@@ -259,76 +344,122 @@ def summarize_content(content, api_key=None, file_path=None, full_content=False)
             return f"문서 요약 (Ollama 오류로 간단 요약): {content[:500]}..."
         return content
 
+# 이미지 분석 캐시 (중복 실행 방지)
+_image_analysis_cache = {}
+_image_analysis_locks = {}
+_cache_lock = threading.Lock()
+
 def analyze_image_with_ollama(image_path):
-    """하이브리드 이미지 분석 (OCR + Ollama)"""
+    """이미지 분석 (Ollama만 사용 - OCR 제거로 속도 향상, 중복 실행 방지)"""
     try:
-        # 1단계: OCR로 텍스트 추출 시도
-        try:
-            from PIL import Image
-            import pytesseract
-            
-            image = Image.open(image_path)
-            ocr_text = pytesseract.image_to_string(image, lang='kor+eng')
-            
-            if len(ocr_text.strip()) > 10:  # 텍스트가 충분히 있으면 OCR 결과 사용
-                return f"이미지에서 텍스트를 추출했습니다: {ocr_text.strip()[:200]}"
-        except:
-            pass
+        import os
         
-        # 2단계: OCR 실패 시 Ollama로 간단한 분석 (영어로 답변)
-        prompt = """IMPORTANT: Count objects very carefully. Look at the image multiple times.
-
-Count the exact number of objects in this image. Be very precise about the count.
-Then describe each object's type and main colors.
-
-Examples:
-- "1 gray and white cat, blue background"
-- "2 dogs, white background" 
-- "3 cars, street scene"
-
-Answer in English very concisely. Double-check your count."""
+        # 파일 해시 계산 (중복 실행 방지)
+        file_hash = None
+        if os.path.exists(image_path):
+            with open(image_path, 'rb') as f:
+                file_hash = hashlib.md5(f.read()).hexdigest()
         
-        # 성능 최적화: 더 가벼운 모델 사용
-        try:
-            # llava:7b 사용 (가장 가벼운 비전 모델)
-            response = ollama.chat(
-                model='llava:7b',
-                messages=[
-                    {
-                        'role': 'user',
-                        'content': prompt,
-                        'images': [image_path]
-                    }
-                ],
-                options={
-                    'temperature': 0.1,  # 더 낮은 temperature로 일관성 향상
-                    'num_predict': 300,  # 토큰 수 더 줄임
-                    'num_ctx': 1024  # 컨텍스트 크기 더 제한
-                }
-            )
-            
-            # Ollama 응답 로깅
-            ollama_response = response['message']['content']
-            print(f"Ollama 분석 결과: {ollama_response}")
-            return ollama_response
-            
-        except Exception as e:
-            print(f"Ollama 이미지 분석 실패, GPT API로 fallback: {str(e)}")
-            # GPT API로 fallback (비용이 들지만 정확도 높음)
-            try:
-                import openai
-                import base64
+        # 캐시 확인 및 동시 요청 제어
+        image_lock = None  # 함수 레벨 변수로 선언
+        if file_hash:
+            with _cache_lock:
+                if file_hash in _image_analysis_cache:
+                    cached_result = _image_analysis_cache[file_hash]
+                    print(f"⚡ 이미지 분석 캐시 히트! (해시: {file_hash[:8]}...)")
+                    return cached_result
                 
+                # 동일한 이미지에 대한 동시 요청이 있으면 Lock 생성
+                if file_hash not in _image_analysis_locks:
+                    _image_analysis_locks[file_hash] = threading.Lock()
+            
+            # 동일한 이미지에 대한 동시 요청 대기 (Lock 획득)
+            image_lock = _image_analysis_locks[file_hash]
+            acquired = image_lock.acquire(blocking=True, timeout=120)  # 최대 120초 대기 (분석 시간 고려)
+            if not acquired:
+                print(f"⚠️ 이미지 분석 Lock 획득 실패 (타임아웃 120초)")
+                # Lock이 해제되지 않은 경우 강제로 정리
+                with _cache_lock:
+                    if file_hash in _image_analysis_locks:
+                        try:
+                            if _image_analysis_locks[file_hash].locked():
+                                _image_analysis_locks[file_hash].release()
+                                print(f"🔓 타임아웃으로 인한 Lock 강제 해제")
+                        except:
+                            pass
+                return "이미지 분석 중 다른 요청이 처리 중입니다. 잠시 후 다시 시도해주세요."
+            
+            try:
+                # Lock 획득 후 다시 캐시 확인 (다른 스레드가 이미 완료했을 수 있음)
+                with _cache_lock:
+                    if file_hash in _image_analysis_cache:
+                        print(f"⚡ 이미지 분석 캐시 히트! (대기 중 다른 요청이 완료함)")
+                        image_lock.release()
+                        return _image_analysis_cache[file_hash]
+                
+                # Lock을 획득했고 캐시에도 없으므로 실제 분석 수행
+                # Lock은 분석이 완료될 때까지 유지 (다른 요청들이 대기하도록)
+                print(f"🖼️ 이미지 분석 시작: {image_path} (Lock 획득, 실제 분석 수행)")
+                if file_hash:
+                    print(f"🔑 파일 해시: {file_hash[:16]}...")
+                
+                # Lock은 분석 완료 후 해제 (아래 코드에서 처리)
+                # 다른 요청들은 Lock을 기다리다가, 첫 번째 요청이 완료되면 캐시에서 결과를 가져옴
+            except Exception as lock_error:
+                if image_lock and image_lock.locked():
+                    image_lock.release()
+                    print(f"🔓 Lock 해제 (예외 발생)")
+                raise
+        else:
+            print(f"🖼️ 이미지 분석 시작: {image_path} (해시 없음, 직접 분석)")
+        
+        print(f"📁 파일 존재 여부: {os.path.exists(image_path)}")
+        if os.path.exists(image_path):
+            file_size = os.path.getsize(image_path)
+            print(f"📏 파일 크기: {file_size} bytes")
+        
+        # GPT-4o-mini를 직접 사용 (Ollama는 타임아웃 문제로 제거)
+        # GPT-4o-mini가 더 빠르고 안정적이며 비용도 저렴함 (이미지 1장당 약 0.04원)
+        print(f"🚀 GPT-4o-mini로 이미지 분석 시작 (Ollama 대신 직접 사용)")
+        print(f"📁 이미지 경로: {image_path}")
+        
+        ollama_response = ""
+        ollama_success = False
+        
+        # GPT-4o-mini로 직접 분석 (Ollama 시도 없음)
+        try:
+            import base64
+            import time
+            openai_api_key = os.getenv('OPENAI_API_KEY')
+            
+            if not openai_api_key:
+                print(f"❌ OPENAI_API_KEY가 설정되지 않았습니다.")
+                ollama_response = "OpenAI API 키가 설정되지 않았습니다."
+            else:
+                print(f"🔄 GPT-4o-mini로 이미지 분석 시도 중... (빠른 응답)")
+                gpt_start_time = time.time()
+                
+                # 이미지를 base64로 인코딩
                 with open(image_path, "rb") as image_file:
                     base64_image = base64.b64encode(image_file.read()).decode('utf-8')
                 
-                response = openai.chat.completions.create(
-                    model="gpt-4o-mini",  # 가장 저렴한 GPT-4 비전 모델
+                # GPT-4o-mini Vision API 호출
+                client = openai.OpenAI(api_key=openai_api_key)
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
                     messages=[
                         {
                             "role": "user",
                             "content": [
-                                {"type": "text", "text": "Count the exact number of objects in this image. Then describe each object's type and main colors only. Answer in English."},
+                                {
+                                    "type": "text",
+                                    "text": """Analyze this image in detail. Include:
+1. All visible text (read exactly as shown, including any text in the image)
+2. Visual content (objects, colors, composition, style)
+3. Overall meaning or message
+
+Be thorough but concise. Make sure to read and include ALL text visible in the image."""
+                                },
                                 {
                                     "type": "image_url",
                                     "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
@@ -336,18 +467,73 @@ Answer in English very concisely. Double-check your count."""
                             ]
                         }
                     ],
-                    max_tokens=100  # 토큰 수 제한으로 비용 절약
+                    max_tokens=500,  # 빠른 응답을 위해 토큰 수 제한
+                    temperature=0.1
                 )
                 
-                gpt_response = response.choices[0].message.content
-                print(f"GPT 분석 결과: {gpt_response}")
-                return gpt_response
-            except Exception as gpt_error:
-                print(f"GPT API fallback도 실패: {str(gpt_error)}")
-                return "이미지 분석 중 오류가 발생했습니다. 이미지를 다시 업로드해주세요."
+                gpt_elapsed = time.time() - gpt_start_time
+                ollama_response = response.choices[0].message.content
+                ollama_success = True
+                print(f"✅ GPT-4o-mini 분석 성공! (소요 시간: {gpt_elapsed:.2f}초)")
+                print(f"💰 GPT-4o-mini 사용됨 - 비용 발생 (약 0.04원)")
+                print(f"📄 GPT-4o-mini 분석 결과:\n{ollama_response}")
+                
+        except Exception as gpt_error:
+            print(f"❌ GPT-4o-mini 분석 실패: {str(gpt_error)}")
+            import traceback
+            traceback.print_exc()
+            ollama_response = "이미지 분석에 실패했습니다. OpenAI API를 확인해주세요."
+        
+        # GPT-4o-mini 분석 결과 반환
+        result = None
+        if ollama_response and len(ollama_response.strip()) > 0:
+            print(f"✅ GPT-4o-mini 이미지 분석 완료: 총 {len(ollama_response)}자")
+            # 여러 LLM이 이를 바탕으로 한국어로 답변 생성
+            result = f"[Image Analysis (English)]\n{ollama_response}"
+        else:
+            error_msg = "이미지 분석 중 오류가 발생했습니다. OpenAI API를 확인해주세요."
+            print(f"❌ {error_msg}")
+            result = error_msg
+        
+        # 결과를 캐시에 저장 (성공한 경우만)
+        if file_hash and result and "오류" not in result and "실패" not in result:
+            with _cache_lock:
+                _image_analysis_cache[file_hash] = result
+                # 캐시 크기 제한 (최대 100개, 오래된 것부터 제거)
+                if len(_image_analysis_cache) > 100:
+                    # 가장 오래된 항목 제거 (간단하게 첫 번째 항목 제거)
+                    oldest_key = next(iter(_image_analysis_cache))
+                    del _image_analysis_cache[oldest_key]
+                    if oldest_key in _image_analysis_locks:
+                        del _image_analysis_locks[oldest_key]
+                print(f"💾 이미지 분석 결과 캐시에 저장됨 (해시: {file_hash[:8]}...)")
+        
+        # Lock 해제 (분석 완료 후 - file_hash가 있고 Lock을 획득한 경우)
+        if file_hash and image_lock and image_lock.locked():
+            try:
+                image_lock.release()
+                print(f"🔓 이미지 분석 Lock 해제 (분석 완료, 해시: {file_hash[:8]}...)")
+            except Exception as release_error:
+                print(f"⚠️ Lock 해제 중 오류: {release_error}")
+        
+        return result
+            
     except Exception as e:
-        print(f"Ollama 이미지 분석 오류: {str(e)}")
-        return f"이미지 분석 중 오류가 발생했습니다: {str(e)}"
+        print(f"❌ 이미지 분석 오류: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        error_result = f"이미지 분석 중 오류가 발생했습니다: {str(e)}"
+        
+        # Lock 해제 (에러 발생 시에도 - file_hash가 있고 Lock을 획득한 경우)
+        if file_hash and image_lock and image_lock.locked():
+            try:
+                image_lock.release()
+                print(f"🔓 이미지 분석 Lock 해제 (에러 발생, 해시: {file_hash[:8]}...)")
+            except Exception as release_error:
+                print(f"⚠️ Lock 해제 중 오류: {release_error}")
+        
+        # 에러는 캐시하지 않음 (재시도 가능하도록)
+        return error_result
 
 def generate_optimal_response_with_ollama(ai_responses, user_question):
     """Ollama를 사용하여 최적의 답변 생성 (비용 절약 + 품질 향상)"""
@@ -671,11 +857,8 @@ Always wrap code in proper markdown code blocks so it can be properly rendered."
                     print(f"❌ {self.model} API error: {str(openai_error)}")
                     import traceback
                     traceback.print_exc()
-                    # API 오류인 경우 원본 질문 반환 (연결 오류 메시지 없음)
-                    if "connection" in str(openai_error).lower() or "network" in str(openai_error).lower():
-                        assistant_response = user_input  # 원본 질문을 그대로 반환
-                    else:
-                        raise  # 다른 오류는 재발생
+                    # 사용자 친화적인 오류 메시지 반환
+                    assistant_response = get_user_friendly_error_message(openai_error)
             
             elif self.api_type == 'anthropic':
                 # Anthropic Messages API 방식 처리
@@ -713,8 +896,10 @@ Always wrap code in proper markdown code blocks so it can be properly rendered."
                 except Exception as claude_error:
                     print(f"Claude API error: {str(claude_error)}")
                     print(f"API Key: {self.api_key[:20] if self.api_key else 'None'}...")
-                    # API 키가 없거나 오류가 발생한 경우 기본 응답
-                    assistant_response = f"안녕하세요! '{user_input}'에 대해 도움을 드릴 수 있습니다. 구체적으로 어떤 정보가 필요하신가요?"
+                    import traceback
+                    traceback.print_exc()
+                    # 사용자 친화적인 오류 메시지 반환
+                    assistant_response = get_user_friendly_error_message(claude_error)
 
 
             
@@ -841,12 +1026,8 @@ Response:"""
                     print(f"❌ Gemini API error: {str(gemini_error)}")
                     import traceback
                     traceback.print_exc()
-                    # 안전 필터 오류인 경우 원본 질문 반환 (오류 메시지 없음)
-                    if "safety" in str(gemini_error).lower() or "block" in str(gemini_error).lower():
-                        print("⚠️ Gemini 안전 필터 오류 - 원본 질문 반환")
-                        assistant_response = user_input  # 원본 질문을 그대로 반환
-                    else:
-                        assistant_response = f"Gemini 오류가 발생했습니다: {str(gemini_error)}"
+                    # 사용자 친화적인 오류 메시지 반환
+                    assistant_response = get_user_friendly_error_message(gemini_error)
             
             elif self.api_type == 'clova':
                 # HyperCLOVA X Studio API 방식 처리 (자유 대화 가능)
@@ -880,10 +1061,11 @@ Response:"""
                         # 대화 히스토리를 HyperCLOVA X v3 형식으로 변환
                         clova_messages = []
                         
-                        # 시스템 메시지 추가 (선택사항, content는 배열)
+                        # 시스템 메시지 추가 (한국어 응답 강제)
+                        clova_system_prompt = "당신은 HyperCLOVA X 기반 AI 어시스턴트입니다. 친절하고 자세하게 답변하세요."
                         clova_messages.append({
                             "role": "system",
-                            "content": ""  # 빈 문자열 사용
+                            "content": enforce_korean_instruction(clova_system_prompt)
                         })
                         
                         # 사용자 메시지 추가 (content는 문자열)
@@ -899,7 +1081,7 @@ Response:"""
                             "messages": clova_messages,
                             "topP": 0.8,
                             "topK": 0,
-                            "maxTokens": 1024,
+                            "maxTokens": HYPERCLOVA_MAX_TOKENS,
                             "temperature": 0.5,
                             "repetitionPenalty": 1.1,
                             "stop": [],
@@ -925,10 +1107,19 @@ Response:"""
                                 # 응답 구조: result > message > content (문자열)
                                 message_obj = result.get('result', {}).get('message', {})
                                 content = message_obj.get('content', '')
+                                stop_reason = (
+                                    message_obj.get('stopReason')
+                                    or message_obj.get('stop_reason')
+                                    or result.get('result', {}).get('stopReason')
+                                    or result.get('result', {}).get('stop_reason')
+                                )
                                 
                                 if content:
                                     assistant_response = content
                                     print(f"✅ HyperCLOVA X 응답 성공: {len(assistant_response)}자")
+                                    if stop_reason and str(stop_reason).lower() in {"length", "max_tokens"}:
+                                        assistant_response += "\n\n[응답이 토큰 제한으로 잘렸습니다. 필요하면 질문을 나누어 다시 요청해 주세요.]"
+                                        print(f"⚠️ HyperCLOVA X stop_reason: {stop_reason}")
                                 else:
                                     print(f"⚠️ content가 비어있음")
                                     assistant_response = '응답을 받을 수 없습니다.'
@@ -938,34 +1129,30 @@ Response:"""
                         else:
                             print(f"⚠️ HyperCLOVA X API error: {response.status_code}")
                             print(f"⚠️ Response: {response.text}")
-                            assistant_response = f"HyperCLOVA X API 오류 (코드: {response.status_code})"
+                            # HTTP 상태 코드를 Exception으로 변환하여 친화적 메시지 생성
+                            error_msg = Exception(f"HTTP {response.status_code}: {response.text}")
+                            assistant_response = get_user_friendly_error_message(error_msg)
                     
                 except Exception as clova_error:
                     print(f"❌ HyperCLOVA X API error: {str(clova_error)}")
                     import traceback
                     traceback.print_exc()
-                    assistant_response = f"HyperCLOVA X API 오류: {str(clova_error)}"
+                    # 사용자 친화적인 오류 메시지 반환
+                    assistant_response = get_user_friendly_error_message(clova_error)
             
             # 대화 이력에 추가
             self.conversation_history.append({"role": "assistant", "content": assistant_response})
             return assistant_response
         except Exception as e:
-            # 인코딩 안전한 오류 처리
-            try:
-                error_msg = str(e)
-                # 특수 문자 제거
-                import re
-                safe_error_msg = re.sub(r'[^\x00-\x7F]+', '', error_msg)
-                print(f"Error: {safe_error_msg}")
-                return f"오류가 발생했습니다: {safe_error_msg}"
-            except:
-                print("Error occurred (encoding issue)")
-                return "오류가 발생했습니다: 인코딩 문제"
+            user_friendly_message = get_user_friendly_error_message(e)
+            print(f"Error handled: {user_friendly_message}")
+            return user_friendly_message
 
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+HYPERCLOVA_MAX_TOKENS = 2048
 HYPERCLOVA_API_KEY = os.getenv('HYPERCLOVA_API_KEY', '')
 HYPERCLOVA_APIGW_KEY = os.getenv('HYPERCLOVA_APIGW_KEY', '')
 
@@ -1144,24 +1331,24 @@ class ChatView(APIView):
 문서에 연습 문제가 포함되어 있다면, 그 연습 문제를 찾아서 풀어주세요.
 문서의 모든 내용을 주의 깊게 읽고, 관련된 정보를 모두 포함하여 답변해주세요."""
                         else:
-                            # 이미지인 경우
-                            final_message = f"""다음은 업로드된 이미지 분석 결과입니다:
+                            # 이미지인 경우 (Ollama가 영어로 분석한 결과를 여러 LLM이 한국어로 답변)
+                            final_message = f"""다음은 업로드된 이미지를 Ollama로 분석한 결과입니다 (영어):
 
 {analyzed_content}
 
 사용자 질문: {user_message}
 
-위 이미지 분석 결과를 바탕으로 사용자의 질문에 한국어로 자세히 답변해주세요."""
+위 영어로 작성된 이미지 분석 결과를 바탕으로 사용자의 질문에 한국어로 자세히 답변해주세요. 이미지 분석 결과의 내용을 충실히 반영하여 답변해주세요."""
                     else:
                         # 사용자 메시지가 없으면 기본 분석 요청
                         if uploaded_file.name.lower().endswith('.pdf'):
                             final_message = f"다음 문서 내용을 한국어로 요약해주세요:\n\n{analyzed_content}"
                         else:
-                            final_message = f"""이미지 분석 결과를 받았습니다:
+                            final_message = f"""다음은 업로드된 이미지를 Ollama로 분석한 결과입니다 (영어):
 
 {analyzed_content}
 
-위 분석 결과를 바탕으로 이 이미지에 대해 한국어로 자세하고 자연스럽게 설명해주세요."""
+위 영어로 작성된 이미지 분석 결과를 바탕으로 이 이미지에 대해 한국어로 자세하고 자연스럽게 설명해주세요. 이미지 분석 결과의 내용을 충실히 반영하여 답변해주세요."""
                     print("분석 완료")
                 except Exception as e:
                     print(f"파일 처리 오류: {str(e)}")
@@ -1204,7 +1391,19 @@ class ChatView(APIView):
                     print(f"🎯 선택된 모델: {selected_models}")
                     print(f"⚖️ 심판 모델: {judge_model}")
                     
-                    final_result = collect_multi_llm_responses(final_message, judge_model, selected_models)
+                    # 질문 유형 감지
+                    has_image = uploaded_file and not uploaded_file.name.lower().endswith('.pdf')
+                    has_document = uploaded_file and uploaded_file.name.lower().endswith('.pdf')
+                    
+                    question_type = None
+                    if has_image:
+                        question_type = 'image'
+                    elif has_document:
+                        question_type = 'document'
+                    else:
+                        question_type = detect_question_type_from_content(final_message)
+                    
+                    final_result = collect_multi_llm_responses(final_message, judge_model, selected_models, question_type=question_type)
                     print(f"✅ 최적 답변 생성 완료: {type(final_result)}")
                     print(f"✅ 최적 답변 결과 키: {list(final_result.keys()) if isinstance(final_result, dict) else 'N/A'}")
                     
@@ -1254,9 +1453,9 @@ class ChatView(APIView):
                     error_trace = traceback.format_exc()
                     print(f"❌ 최적 답변 생성 실패: {e}")
                     print(f"❌ 상세 오류:\n{error_trace}")
-                    # 폴백: 기본 응답
-                    response = f"최적 답변 생성 중 오류가 발생했습니다: {str(e)}\n\n상세 오류는 서버 로그를 확인해주세요."
-                    return Response({'response': response})
+                    # 폴백: 사용자 친화적인 오류 메시지 반환
+                    friendly_error = get_user_friendly_error_message(e)
+                    return Response({'response': friendly_error})
             
             # optimal 모델이 아닌 경우
             # 비용 절약: 파일 분석 시 간소화된 프롬프트 사용
@@ -1281,9 +1480,13 @@ class ChatView(APIView):
             
             return Response({'response': response})
         except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            import traceback
+            traceback.print_exc()
+            # 사용자 친화적인 오류 메시지 반환
+            friendly_error = get_user_friendly_error_message(e)
+            return Response({'error': friendly_error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-def collect_multi_llm_responses(user_message, judge_model="GPT-4o", selected_models=None):
+def collect_multi_llm_responses(user_message, judge_model="GPT-4o", selected_models=None, question_type=None):
     """1단계: 선택된 LLM들에게 병렬 질의 후 심판 모델로 검증"""
     import asyncio
     import aiohttp
@@ -1386,14 +1589,28 @@ def collect_multi_llm_responses(user_message, judge_model="GPT-4o", selected_mod
                 'user_id': 'system'
             }
             
+            print(f"🔄 {ai_name} 모델에 요청 전송 중... (엔드포인트: {endpoint})")
             async with session.post(endpoint, json=payload, timeout=30) as response:
                 if response.status == 200:
                     result = await response.json()
-                    return ai_name, result.get('response', '응답 없음')
+                    response_content = result.get('response', '응답 없음')
+                    print(f"✅ {ai_name} 응답 수신 완료: {len(str(response_content))}자")
+                    print(f"📄 {ai_name} 응답 내용 (처음 200자): {str(response_content)[:200]}...")
+                    return ai_name, response_content
                 else:
-                    return ai_name, f'오류: HTTP {response.status}'
+                    # HTTP 상태 코드 오류를 친화적 메시지로 변환
+                    error_text = await response.text()
+                    print(f"❌ {ai_name} HTTP 오류: {response.status}, 내용: {error_text[:200]}")
+                    error_msg = Exception(f"HTTP {response.status}: {error_text}")
+                    friendly_msg = get_user_friendly_error_message(error_msg)
+                    return ai_name, friendly_msg
         except Exception as e:
-            return ai_name, f'오류: {str(e)}'
+            # 예외를 친화적 메시지로 변환
+            print(f"❌ {ai_name} 요청 중 예외 발생: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            friendly_msg = get_user_friendly_error_message(e)
+            return ai_name, friendly_msg
     
     async def collect_all_responses():
         """모든 LLM에서 동시에 응답 수집"""
@@ -1421,13 +1638,55 @@ def collect_multi_llm_responses(user_message, judge_model="GPT-4o", selected_mod
         
         print(f"✅ {len(responses)}개 LLM에서 응답 수집 완료: {list(responses.keys())}")
         
-        if not responses:
-            print(f"❌ 수집된 응답이 없습니다!")
-            raise ValueError("LLM에서 응답을 받지 못했습니다.")
+        # 에러 메시지 필터링 (타임아웃/네트워크 오류 등)
+        # get_user_friendly_error_message가 반환하는 정확한 에러 메시지 패턴
+        error_patterns = [
+            "네트워크 연결에 문제가 발생했습니다",
+            "요청 시간이 초과되었습니다",
+            "서버에 일시적인 문제가 발생했습니다",
+            "API 인증에 실패했습니다",
+            "모델 사용량이 초과되었습니다",
+            "사용량 한도를 초과했습니다",
+            "오류가 발생했습니다. 잠시 후 다시 시도해 주세요",
+            "연결할 수 없습니다",
+            "대화 길이가 너무 깁니다",
+            "콘텐츠 정책에 의해 차단되었습니다"
+        ]
         
-        # 3단계: 심판 모델로 검증 및 최적 답변 생성
-        print(f"⚖️ 심판 모델({judge_model})로 검증 및 최적 답변 생성 시작...")
-        final_result = judge_and_generate_optimal_response(responses, user_message, judge_model)
+        valid_responses = {}
+        error_responses = {}
+        
+        for ai_name, response in responses.items():
+            response_str = str(response)
+            # 정확한 에러 패턴 매칭 (부분 문자열이 아닌 전체 메시지 확인)
+            is_error = any(pattern in response_str for pattern in error_patterns)
+            
+            # 응답이 너무 짧고 에러 키워드를 포함하면 에러로 간주
+            if len(response_str) < 50 and any(keyword in response_str.lower() for keyword in ["timeout", "connection", "error", "오류", "실패"]):
+                is_error = True
+            
+            if is_error:
+                error_responses[ai_name] = response
+                print(f"⚠️ {ai_name} 응답이 에러 메시지로 감지됨: {response_str[:100]}...")
+            else:
+                valid_responses[ai_name] = response
+                print(f"✅ {ai_name} 유효한 응답: {len(response_str)}자")
+        
+        print(f"📊 유효한 응답: {len(valid_responses)}개, 에러 응답: {len(error_responses)}개")
+        
+        # 유효한 응답이 없으면 에러
+        if not valid_responses:
+            if error_responses:
+                error_summary = ", ".join([f"{name}: {msg[:50]}..." for name, msg in list(error_responses.items())[:3]])
+                raise ValueError(f"모든 LLM 요청이 실패했습니다. ({error_summary})")
+            else:
+                print(f"❌ 수집된 응답이 없습니다!")
+                raise ValueError("LLM에서 응답을 받지 못했습니다.")
+        
+        # 유효한 응답만 사용하여 최적 답변 생성
+        print(f"⚖️ 심판 모델({judge_model})로 검증 및 최적 답변 생성 시작... (유효한 응답 {len(valid_responses)}개 사용)")
+        print(f"📋 질문 유형: {question_type}")
+        final_result = judge_and_generate_optimal_response(valid_responses, user_message, judge_model, question_type=question_type)
         print(f"✅ 최적 답변 생성 완료: {type(final_result)}, 키: {list(final_result.keys()) if isinstance(final_result, dict) else 'N/A'}")
         return final_result
         
@@ -1937,13 +2196,18 @@ JSON 형식으로만 응답:
         print(f"⚠️ 질문 분류 실패: {e}, 기본값 'factual' 사용")
         return "factual"
 
-def judge_and_generate_optimal_response(llm_responses, user_question, judge_model="GPT-5"):
+def judge_and_generate_optimal_response(llm_responses, user_question, judge_model="GPT-5", question_type=None):
     """하이브리드 검증 시스템: LLM 비교 + 선택적 웹 검증 + 다수결"""
     try:
         print(f"🔍 하이브리드 검증 시작: {user_question}")
+        print(f"📋 judge_and_generate_optimal_response에 전달된 llm_responses 키: {list(llm_responses.keys()) if llm_responses else 'None'}")
+        print(f"📋 llm_responses 전체: {llm_responses}")
         
-        # 0단계: 질문 유형 분류
-        question_type = classify_question_type(user_question)
+        # 0단계: 질문 유형 분류 (전달받지 않은 경우에만 자동 분류)
+        if question_type is None:
+            question_type = classify_question_type(user_question)
+        else:
+            print(f"📋 전달받은 질문 유형: {question_type}")
         
         # 1단계: 상호모순 감지
         conflicts = detect_conflicts_in_responses(llm_responses)
@@ -1964,6 +2228,12 @@ def judge_and_generate_optimal_response(llm_responses, user_question, judge_mode
         
         if question_type == "code":
             print(f"💻 코드 질문 감지 → Wikipedia 검증 생략, 코드 품질 평가 사용")
+            web_result = {"verified": False}
+        elif question_type == "image":
+            print(f"🖼️ 이미지 질문 감지 → Wikipedia 검증 생략, OCR/Ollama 검증 사용")
+            web_result = {"verified": False}
+        elif question_type == "document":
+            print(f"📄 문서 질문 감지 → Wikipedia 검증 생략, 문서 분석 사용")
             web_result = {"verified": False}
         elif question_type == "factual":
             print(f"🌐 Wikipedia 웹 검증 시작... 질문: '{user_question}'")
@@ -2175,10 +2445,11 @@ def judge_and_generate_optimal_response(llm_responses, user_question, judge_mode
 {model_responses_text}
 
 **최적 답변 생성 규칙:**
-1. 여러 AI의 코드를 비교하여 **가장 정확하고 완전한 코드**를 선택하세요
-2. 코드가 **실행 가능하고 완전한지** 확인하세요
-3. **마크다운 코드 블록 형식**을 유지하세요 (```python ... ```)
-4. 여러 코드의 장점을 조합하여 더 나은 코드를 만들 수 있습니다
+1. **반드시 여러 AI의 코드를 조합** - 단일 AI의 코드를 그대로 복사하는 것 절대 금지
+2. 여러 AI의 코드를 비교하여 **가장 정확하고 완전한 코드**를 선택하거나 조합하세요
+3. 코드가 **실행 가능하고 완전한지** 확인하세요
+4. **마크다운 코드 블록 형식**을 유지하세요 (```python ... ```)
+5. 여러 코드의 장점을 조합하여 더 나은 코드를 만드세요 - 단일 AI 코드 복사 금지
 
 **각 AI 코드 평가 기준:**
 - **정확성**: 요구사항 만족 여부
@@ -2201,15 +2472,70 @@ def judge_and_generate_optimal_response(llm_responses, user_question, judge_mode
 반드시 아래 JSON 형식으로만 응답하세요:
 
 {{
-  "optimal_answer": "가장 좋은 코드 (마크다운 코드 블록 포함)",
+  "optimal_answer": "반드시 2개 이상의 AI 코드를 조합한 최적 코드 (단일 AI 코드 복사 절대 금지, 마크다운 코드 블록 포함)",
   "verification_results": {{
     {verification_json_format}
   }},
   "confidence_score": "코드 품질 신뢰도 (0-100)",
   "contradictions_detected": [],
   "fact_verification": {{}},
-  "analysis_rationale": "어떤 코드를 선택했는지와 그 이유를 간단히 설명"
+  "analysis_rationale": "어떤 AI의 어떤 코드를 조합했는지와 그 이유를 간단히 설명"
 }}
+"""
+        elif question_type == "image":
+            judge_prompt = f"""
+질문: {user_question}
+
+**🖼️ 이미지 분석 질문 - OCR/Ollama 검증 결과 기반**
+- 각 AI가 이미지를 분석한 결과를 비교하여 최적의 답변 생성
+- Wikipedia 검증은 사용하지 않음 (이미지 분석 결과 기반)
+
+**제공된 AI 답변들:**
+{model_responses_text}
+{contradiction_warning}
+
+**🚨 절대 준수 핵심 규칙 (매우 중요!):**
+1. **반드시 위에 제공된 AI 답변의 원본 문장만 사용** - 새로운 문장 작성/요약/재구성 절대 금지
+2. **여러 AI 답변 반드시 조합** - 단일 모델 선택 절대 금지, 단일 모델의 답변을 그대로 복사하는 것 절대 금지
+3. **할루시네이션 절대 금지** - 위 AI 답변에 언급되지 않은 내용 절대 포함 금지
+4. **optimal_answer는 반드시 위 AI 답변들에서 추출한 문장들로만 구성** - 절대 새로운 내용 추가 금지
+5. **각 AI의 원본 답변을 그대로 복사**하여 adopted_info/rejected_info 작성
+6. **각 AI마다 반드시 adopted_info 또는 rejected_info 중 하나에는 내용 포함** (둘 다 빈 배열 절대 금지)
+7. **optimal_answer는 반드시 2개 이상의 AI 답변에서 문장을 추출하여 조합** - 단일 AI의 답변을 그대로 사용하는 것 절대 금지
+8. **각 AI가 실제로 답변한 부분만 추출** - AI가 답변하지 않은 내용은 절대 포함 금지
+
+**⚠️ 절대 금지 사항:**
+- 위 AI 답변에 없는 예제, 코드, 설명 추가 금지
+- 위 AI 답변에 없는 주제나 카테고리 추가 금지
+- 위 AI 답변을 확장하거나 보완하는 내용 추가 금지
+
+**adopted_info/rejected_info 작성:**
+- adopted_info: 위 AI 답변에서 추출한 정확하고 유용한 원본 문장 그대로 복사
+- rejected_info: 위 AI 답변에서 추출한 부정확하거나 모순되는 정보만 원본 그대로 복사
+- **상호 배타적** - 같은 문장이 양쪽에 동시 존재 금지
+- **adopted_info/rejected_info는 반드시 위에 제공된 해당 AI의 원본 답변에서 직접 복사한 문장이어야 함**
+
+**마크다운 포맷:**
+- 리스트: `- 항목`
+- 제목: `## 주제`
+- 강조: `**굵게**`
+
+JSON 응답:
+{{
+  "optimal_answer": "반드시 2개 이상의 AI 답변에서 문장을 추출하여 조합한 답변 (단일 AI 답변 복사 절대 금지, 각 AI가 실제로 답변한 부분만 추출)",
+  "verification_results": {{
+    {verification_json_format}
+  }},
+  "confidence_score": "0-100",
+  "contradictions_detected": ["상호모순 사항"],
+  "fact_verification": {{"dates": [], "locations": [], "facts": []}},
+  "analysis_rationale": "어떤 AI의 어떤 정보를 채택/제외했는지 상세히 설명"
+}}
+
+**⚠️ optimal_answer 작성 시 필수 사항:**
+- **반드시 2개 이상의 AI 답변에서 문장을 추출하여 조합** - 단일 AI의 답변을 그대로 사용하는 것 절대 금지
+- **각 AI가 실제로 답변한 부분만 추출** - AI가 답변하지 않은 내용은 절대 포함 금지
+- 이미지 분석 결과를 정확하게 반영하되, 위 AI 답변에 없는 내용은 절대 추가하지 마세요
 """
         elif question_type == "opinion":
             judge_prompt = f"""
@@ -2224,26 +2550,36 @@ def judge_and_generate_optimal_response(llm_responses, user_question, judge_mode
 {web_verification_text}
 {contradiction_warning}
 
-**핵심 규칙:**
-1. **원본 문장만 사용** - 새로운 문장 작성/요약/재구성 금지
-2. **여러 AI 답변 조합** - 단일 모델 선택 금지
-3. **할루시네이션 금지** - LLM이 언급하지 않은 내용 포함 금지
-4. **각 AI의 원본 답변을 그대로 복사**하여 adopted_info/rejected_info 작성
-5. **각 AI마다 반드시 adopted_info 또는 rejected_info 중 하나에는 내용 포함** (둘 다 빈 배열 금지)
+**🚨 절대 준수 핵심 규칙 (매우 중요!):**
+1. **반드시 위에 제공된 AI 답변의 원본 문장만 사용** - 새로운 문장 작성/요약/재구성 절대 금지
+2. **여러 AI 답변 반드시 조합** - 단일 모델 선택 절대 금지, 단일 모델의 답변을 그대로 복사하는 것 절대 금지
+3. **할루시네이션 절대 금지** - 위 AI 답변에 언급되지 않은 내용 절대 포함 금지
+4. **optimal_answer는 반드시 위 AI 답변들에서 추출한 문장들로만 구성** - 절대 새로운 내용 추가 금지
+5. **각 AI의 원본 답변을 그대로 복사**하여 adopted_info/rejected_info 작성
+6. **각 AI마다 반드시 adopted_info 또는 rejected_info 중 하나에는 내용 포함** (둘 다 빈 배열 절대 금지)
+7. **optimal_answer는 반드시 2개 이상의 AI 답변에서 문장을 추출하여 조합** - 단일 AI의 답변을 그대로 사용하는 것 절대 금지
+8. **각 AI가 실제로 답변한 부분만 추출** - AI가 답변하지 않은 내용은 절대 포함 금지
+
+**⚠️ 절대 금지 사항:**
+- 위 AI 답변에 없는 예제, 코드, 설명 추가 금지
+- 위 AI 답변에 없는 주제나 카테고리 추가 금지
+- 위 AI 답변을 확장하거나 보완하는 내용 추가 금지
+- 단순 인사 질문에는 단순 인사 답변만 제공 (추가 설명 금지)
 
 **adopted_info/rejected_info 작성:**
-- adopted_info: 유용한 원본 문장 그대로 복사
-- rejected_info: Wikipedia 불일치 또는 상충 정보만 원본 그대로 복사
+- adopted_info: 위 AI 답변에서 추출한 유용한 원본 문장 그대로 복사
+- rejected_info: 위 AI 답변에서 추출한 Wikipedia 불일치 또는 상충 정보만 원본 그대로 복사
 - **상호 배타적** - 같은 문장이 양쪽에 동시 존재 금지
+- **adopted_info/rejected_info는 반드시 위에 제공된 해당 AI의 원본 답변에서 직접 복사한 문장이어야 함**
 
 **마크다운 포맷:**
 - 리스트: `- 항목`
 - 제목: `## 주제`
 - 강조: `**굵게**`
 
-JSON 응답:데ㅕㅓㄴ히 ㄴ
+JSON 응답:
 {{
-  "optimal_answer": "마크다운 형식 최적 답변",
+  "optimal_answer": "반드시 2개 이상의 AI 답변에서 문장을 추출하여 조합한 답변 (단일 AI 답변 복사 절대 금지, 각 AI가 실제로 답변한 부분만 추출)",
   "verification_results": {{
     {verification_json_format}
   }},
@@ -2252,6 +2588,13 @@ JSON 응답:데ㅕㅓㄴ히 ㄴ
   "fact_verification": {{"dates": [], "locations": [], "facts": []}},
   "analysis_rationale": "어떤 AI의 어떤 정보를 채택/제외했는지 상세히 설명"
 }}
+
+**⚠️ optimal_answer 작성 시 필수 사항:**
+- **반드시 2개 이상의 AI 답변에서 문장을 추출하여 조합** - 단일 AI의 답변을 그대로 사용하는 것 절대 금지
+- **각 AI가 실제로 답변한 부분만 추출** - AI가 답변하지 않은 내용은 절대 포함 금지
+- 질문이 "hi", "안녕" 같은 단순 인사라면 → 위 AI 답변의 인사 문장들을 조합 (단일 AI 답변 복사 금지)
+- 질문이 프로그래밍 질문이 아니라면 → 프로그래밍 예제나 코드 절대 포함 금지
+- 위 AI 답변에 없는 주제나 카테고리는 절대 추가하지 마세요
 """
         else:
             # 일반/사실 질문 (factual, general, document, image, creative 등)
@@ -2268,16 +2611,27 @@ JSON 응답:데ㅕㅓㄴ히 ㄴ
 {web_verification_text}
 {contradiction_warning}
 
-**핵심 규칙:**
-1. **원본 문장만 사용** - 새로운 문장 작성/요약/재구성 금지
-2. **여러 AI 답변 조합** - 단일 모델 선택 금지
-3. **할루시네이션 금지** - LLM이 언급하지 않은 내용 포함 금지
+**🚨 절대 준수 핵심 규칙 (매우 중요!):**
+1. **반드시 위에 제공된 AI 답변의 원본 문장만 사용** - 새로운 문장 작성/요약/재구성 절대 금지
+2. **여러 AI 답변 반드시 조합** - 단일 모델 선택 절대 금지, 단일 모델의 답변을 그대로 복사하는 것 절대 금지
+3. **할루시네이션 절대 금지** - 위 AI 답변에 언급되지 않은 내용 절대 포함 금지
+4. **optimal_answer는 반드시 위 AI 답변들에서 추출한 문장들로만 구성** - 절대 새로운 내용 추가 금지
+5. **optimal_answer는 반드시 2개 이상의 AI 답변에서 문장을 추출하여 조합** - 단일 AI의 답변을 그대로 사용하는 것 절대 금지
+6. **각 AI가 실제로 답변한 부분만 추출** - AI가 답변하지 않은 내용은 절대 포함 금지
+
+**⚠️ 절대 금지 사항:**
+- 위 AI 답변에 없는 예제, 코드, 설명 추가 금지
+- 위 AI 답변에 없는 주제나 카테고리 추가 금지
+- 위 AI 답변을 확장하거나 보완하는 내용 추가 금지
+- 단순 인사 질문에는 단순 인사 답변만 제공 (추가 설명 금지)
+- 단일 AI의 답변을 그대로 복사하여 optimal_answer에 사용하는 것 절대 금지
 
 **정보 채택 기준:**
-- ✅ **adopted_info**: Wikipedia 일치 정보 + 모순되지 않는 유용한 정보
-- ❌ **rejected_info**: Wikipedia 명확히 모순되는 정보만
-- **각 AI마다 반드시 adopted_info 또는 rejected_info 중 하나에는 내용 포함** (둘 다 빈 배열 금지)
+- ✅ **adopted_info**: 위 AI 답변에서 추출한 Wikipedia 일치 정보 + 모순되지 않는 유용한 정보 (원본 문장 그대로 복사)
+- ❌ **rejected_info**: 위 AI 답변에서 추출한 Wikipedia 명확히 모순되는 정보만 (원본 문장 그대로 복사)
+- **각 AI마다 반드시 adopted_info 또는 rejected_info 중 하나에는 내용 포함** (둘 다 빈 배열 절대 금지)
 - **상호 배타적** - 같은 문장이 양쪽에 동시 존재 금지
+- **adopted_info/rejected_info는 반드시 위에 제공된 해당 AI의 원본 답변에서 직접 복사한 문장이어야 함**
 
 **마크다운 포맷:**
 - 제목: `## 주제`, `### 소주제`
@@ -2287,7 +2641,7 @@ JSON 응답:데ㅕㅓㄴ히 ㄴ
 
 JSON 응답:
 {{
-  "optimal_answer": "마크다운 형식 최적 답변",
+  "optimal_answer": "반드시 2개 이상의 AI 답변에서 문장을 추출하여 조합한 답변 (단일 AI 답변 복사 절대 금지, 각 AI가 실제로 답변한 부분만 추출)",
   "verification_results": {{
     {verification_json_format}
   }},
@@ -2296,6 +2650,13 @@ JSON 응답:
   "fact_verification": {{"dates": [], "locations": [], "facts": []}},
   "analysis_rationale": "어떤 AI의 어떤 정보를 채택/제외했는지, Wikipedia 검증 결과 반영 방법 상세 설명"
 }}
+
+**⚠️ optimal_answer 작성 시 필수 사항:**
+- **반드시 2개 이상의 AI 답변에서 문장을 추출하여 조합** - 단일 AI의 답변을 그대로 사용하는 것 절대 금지
+- **각 AI가 실제로 답변한 부분만 추출** - AI가 답변하지 않은 내용은 절대 포함 금지
+- 질문이 "hi", "안녕" 같은 단순 인사라면 → 위 AI 답변의 인사 문장들을 조합 (단일 AI 답변 복사 금지)
+- 질문이 프로그래밍 질문이 아니라면 → 프로그래밍 예제나 코드 절대 포함 금지
+- 위 AI 답변에 없는 주제나 카테고리는 절대 추가하지 마세요
 
 """
 
@@ -2338,17 +2699,29 @@ JSON 응답:
 {contradiction_warning}
 
 **🚨 절대 준수 사항 (매우 중요!):**
-1. **반드시 위에 제공된 LLM 답변들의 내용만 사용하세요**
-2. **절대 새로운 정보를 추가하거나 만들어내지 마세요**
-3. **LLM이 언급하지 않은 맛집, 카페, 장소, 정보는 절대 포함하지 마세요**
-4. **할루시네이션 금지!** - 위 답변에 없는 내용은 절대 작성 금지
-5. **위에 제공된 LLM 답변의 개수를 확인하세요** - 1개만 있으면 "다른 AI"라는 표현을 사용하지 마세요
-6. **최적 답변의 모든 문장은 위 LLM 답변에서 직접 추출한 것이어야 합니다**
+1. **반드시 위에 제공된 AI 답변의 원본 문장만 사용하세요** - 새로운 문장 작성/요약/재구성 절대 금지
+2. **여러 AI 답변 반드시 조합** - 단일 모델 선택 절대 금지, 단일 모델의 답변을 그대로 복사하는 것 절대 금지
+3. **절대 새로운 정보를 추가하거나 만들어내지 마세요**
+4. **AI가 언급하지 않은 맛집, 카페, 장소, 정보는 절대 포함하지 마세요**
+5. **할루시네이션 절대 금지!** - 위 답변에 없는 내용은 절대 작성 금지
+6. **위에 제공된 AI 답변의 개수를 확인하세요** - 1개만 있으면 "다른 AI"라는 표현을 사용하지 마세요
+7. **optimal_answer의 모든 문장은 반드시 위 AI 답변들에서 직접 추출한 것이어야 합니다** - 절대 새로운 내용 추가 금지
+8. **optimal_answer는 반드시 2개 이상의 AI 답변에서 문장을 추출하여 조합** - 단일 AI의 답변을 그대로 사용하는 것 절대 금지
+9. **각 AI가 실제로 답변한 부분만 추출** - AI가 답변하지 않은 내용은 절대 포함 금지
+10. **adopted_info/rejected_info는 반드시 위에 제공된 해당 AI의 원본 답변에서 직접 복사한 문장이어야 합니다**
+11. **각 AI마다 반드시 adopted_info 또는 rejected_info 중 하나에는 내용을 포함하세요** (둘 다 빈 배열 절대 금지)
+
+**⚠️ 절대 금지 사항:**
+- 위 AI 답변에 없는 예제, 코드, 설명 추가 금지
+- 위 AI 답변에 없는 주제나 카테고리 추가 금지
+- 위 AI 답변을 확장하거나 보완하는 내용 추가 금지
+- 단순 인사 질문에는 단순 인사 답변만 제공 (추가 설명 금지)
+- 단일 AI의 답변을 그대로 복사하여 optimal_answer에 사용하는 것 절대 금지
 
 반드시 아래 JSON 형식으로만 응답하세요:
 
 {{
-  "optimal_answer": "검증된 정확한 정보만으로 작성한 최적의 답변",
+  "optimal_answer": "반드시 2개 이상의 AI 답변에서 문장을 추출하여 조합한 답변 (단일 AI 답변 복사 절대 금지, 각 AI가 실제로 답변한 부분만 추출)",
   "verification_results": {{
     {verification_json_format}
   }},
@@ -2361,6 +2734,11 @@ JSON 응답:
   }},
   "analysis_rationale": "최적 답변 생성 근거 - 각 AI의 답변에서 어떤 정보를 채택했는지, 어떤 정보가 틀렸거나 상반되어서 제외했는지, Wikipedia 검증 결과를 어떻게 반영했는지 상세히 설명"
 }}
+
+**⚠️ optimal_answer 작성 시 주의사항:**
+- 질문이 "hi", "안녕" 같은 단순 인사라면 → 위 AI 답변의 인사 문장만 사용 (추가 설명 절대 금지)
+- 질문이 프로그래밍 질문이 아니라면 → 프로그래밍 예제나 코드 절대 포함 금지
+- 위 AI 답변에 없는 주제나 카테고리는 절대 추가하지 마세요
 """
             print(f"📏 요약 후 프롬프트 길이: {len(judge_prompt)}자")
         
@@ -2429,7 +2807,9 @@ JSON 응답:
                             optimal_answer = re.sub(pattern, '', optimal_answer, flags=re.DOTALL)
                     
                     # 정리
-                    optimal_answer = re.sub(r'\s+', ' ', optimal_answer).strip()
+                    optimal_answer = re.sub(r'[ \t]+', ' ', optimal_answer)
+                    optimal_answer = re.sub(r'\n{3,}', '\n\n', optimal_answer)
+                    optimal_answer = optimal_answer.strip()
                     
                     # 최종 답변이 비었으면 검증된 연도로 재구성
                     if not optimal_answer or len(optimal_answer) < 50:
@@ -2476,13 +2856,15 @@ JSON 응답:
                     for model in llm_responses.keys()
                 },
                 "심판모델": judge_model,
-                "상태": "검증 실패"
+                "상태": "검증 실패",
+                "원본_응답": llm_responses
             }
         return {
             "최적의_답변": "검증 중 오류가 발생했습니다.",
             "llm_검증_결과": {},
             "심판모델": judge_model,
-            "상태": "오류"
+            "상태": "오류",
+            "원본_응답": llm_responses or {}
         }
 
 def call_judge_model(model_name, prompt):
@@ -2677,7 +3059,11 @@ def parse_judge_response(judge_response, judge_model, llm_responses=None):
             verification_results = parsed_data.get("verification_results", {})
             contradictions = parsed_data.get("contradictions_detected", [])
             
+            # 처리된 모델 추적
+            processed_models = set()
+            
             for model_name, verification in verification_results.items():
+                processed_models.add(model_name)
                 errors_text = verification.get("errors", "오류 없음")
                 
                 # 상호모순이 감지된 경우 강제로 오류 처리
@@ -2734,7 +3120,7 @@ def parse_judge_response(judge_response, judge_model, llm_responses=None):
                         cleaned_adopted_info.append(item.strip())
                 
                 print(f"📊 {model_name}: adopted_info={len(cleaned_adopted_info)}개, rejected_info={len(cleaned_rejected_info)}개")
-                
+
                 result["llm_검증_결과"][model_name] = {
                     "정확성": "✅" if is_accurate else "❌",
                     "오류": errors_text if not is_accurate else "정확한 정보 제공",
@@ -2742,6 +3128,35 @@ def parse_judge_response(judge_response, judge_model, llm_responses=None):
                     "채택된_정보": cleaned_adopted_info,
                     "제외된_정보": cleaned_rejected_info
                 }
+            
+            # Judge 모델이 반환하지 않은 모델들에 대해서도 기본 검증 결과 생성
+            if llm_responses:
+                print(f"📋 llm_responses의 모든 모델: {list(llm_responses.keys())}")
+                print(f"📋 processed_models: {list(processed_models)}")
+                for model_name in llm_responses.keys():
+                    if model_name not in processed_models:
+                        print(f"⚠️ {model_name}: Judge 모델이 검증 결과를 반환하지 않음. 기본 검증 결과 생성...")
+                        # 원본 응답에서 정보 추출
+                        original_response = llm_responses[model_name]
+                        adopted_info = []
+                        if original_response and len(original_response.strip()) > 0:
+                            import re
+                            sentences = re.split(r'[.!?]\s+', original_response.strip())
+                            adopted_info = [s.strip() + '.' for s in sentences[:3] if len(s.strip()) > 10]
+                        
+                        result["llm_검증_결과"][model_name] = {
+                            "정확성": "✅",
+                            "오류": "정확한 정보 제공",
+                            "신뢰도": "50",
+                            "채택된_정보": adopted_info,
+                            "제외된_정보": []
+                        }
+                        print(f"✅ {model_name}: 기본 검증 결과 생성 완료 (adopted_info={len(adopted_info)}개)")
+                    else:
+                        print(f"✅ {model_name}: Judge 모델이 검증 결과를 반환함 (이미 처리됨)")
+                
+                print(f"📊 최종 llm_검증_결과 키: {list(result['llm_검증_결과'].keys())}")
+                result["원본_응답"] = llm_responses
             
             return result
         else:
@@ -2791,6 +3206,9 @@ def create_fallback_result(judge_model, llm_responses=None):
             "제외된_정보": []
         }
     
+    if llm_responses:
+        result["원본_응답"] = llm_responses
+    
     return result
 
 def format_optimal_response(final_result):
@@ -2818,33 +3236,44 @@ def format_optimal_response(final_result):
         # 분석 근거 추출
         analysis_rationale = final_result.get("분석_근거", "")
         print(f"🔍 analysis_rationale 길이: {len(analysis_rationale) if analysis_rationale else 0}자")
+
+        original_responses = final_result.get("원본_응답", {})
+
+        def normalize_spaces(text):
+            return re.sub(r'\s+', ' ', text or '').strip()
+
+        def contains_text(container, snippet):
+            if not container or not snippet:
+                return False
+            normalized_container = normalize_spaces(container).lower()
+            normalized_snippet = normalize_spaces(snippet).lower()
+            return bool(normalized_snippet) and normalized_snippet in normalized_container
+
+        def find_original_text(model_key):
+            if not original_responses:
+                return ""
+            if model_key in original_responses:
+                return original_responses[model_key]
+            lower_key = model_key.lower()
+            for candidate_key, value in original_responses.items():
+                if candidate_key.lower() == lower_key:
+                    return value
+            return ""
         
         # 최적 답변이 비어있는 경우 체크
         if not optimal_answer or len(optimal_answer.strip()) == 0:
             print(f"⚠️ 최적 답변이 비어있습니다! 폴백 메시지 생성...")
             optimal_answer = "최적 답변 생성 중 오류가 발생했습니다. 각 AI 모델의 개별 응답을 확인해주세요."
         
-        # 메인 답변 구성
-        formatted_response = f"""**최적의 답변:**
+        # 메인 답변 구성 (채팅 창에는 최적 답변 본문만 표시)
+        formatted_response = f"""## 최적의 답변
 
 {optimal_answer}
-
-*({judge_model} 검증 완료 - 신뢰도: {confidence}%)*
 """
         
-        # 분석 근거 추가 (있는 경우)
-        if analysis_rationale:
-            formatted_response += f"""
-**📊 답변 생성 근거:**
-
-{analysis_rationale}
-"""
-        
-        formatted_response += """
-**각 LLM 검증 결과:**
-"""
-        
-        # 각 LLM 검증 결과 추가 (실제 응답한 모델들만)
+        # 분석 근거와 각 LLM 검증 결과는 모달에서만 표시되도록 제거
+        # (프론트엔드에서 analysisData를 통해 모달에 표시)
+        # 하지만 verification_results 필터링은 모달 데이터를 위해 유지
         model_names = {
             # GPT 모델들 (최신 추가)
             "GPT-5": "GPT-5",
@@ -2874,44 +3303,52 @@ def format_optimal_response(final_result):
             "HCX-DASH-001": "HyperCLOVA X HCX-DASH-001",
         }
         
-        for model_key, model_display_name in model_names.items():
-            if model_key in verification_results:
-                verification = verification_results[model_key]
-                accuracy = verification.get("정확성", "✅")
-                error = verification.get("오류", "오류 없음")
-                model_confidence = verification.get("신뢰도", "50")
-                adopted = verification.get("채택된_정보", [])
-                rejected = verification.get("제외된_정보", [])
-                
-                formatted_response += f"""
-**{model_display_name}:**
-{accuracy} 정확성: {accuracy}
-❌ 오류: {error}
-📊 신뢰도: {model_confidence}%
-"""
-                
-                # 채택된 정보 추가 (각 항목을 개별 라인으로)
-                if adopted and len(adopted) > 0:
-                    for item in adopted:
-                        formatted_response += f"✅ 채택된 정보: {item}\n"
-                
-                # 제외된 정보 추가 (각 항목을 개별 라인으로)
-                if rejected and len(rejected) > 0:
-                    for item in rejected:
-                        formatted_response += f"❌ 제외된 정보: {item}\n"
+        # verification_results 필터링 (모달 데이터를 위해 유지, 마크다운에는 추가하지 않음)
+        # 필터링 로직 완화: adopted_info가 비어있으면 원본 사용
+        print(f"🔍 format_optimal_response - verification_results 키: {list(verification_results.keys())}")
+        print(f"🔍 format_optimal_response - model_names 키: {list(model_names.keys())}")
         
-        # 상호모순 정보 추가 (각 AI 분석 외부에 표시)
-        if contradictions:
-            contradiction_text = chr(10).join(f"- {contradiction}" for contradiction in contradictions)
-            formatted_response += f"""
+        # verification_results의 모든 키를 순회 (model_names에 없는 모델도 포함)
+        for model_key in verification_results.keys():
+            verification = verification_results[model_key]
+            adopted = verification.get("채택된_정보", []) or []
+            rejected = verification.get("제외된_정보", []) or []
 
-**⚠️ 발견된 상호모순:**
-{contradiction_text}
-"""
+            original_text = find_original_text(model_key)
+            print(f"🔍 format_optimal_response - 처리 중인 모델: {model_key}, original_text 길이: {len(original_text) if original_text else 0}")
+
+            # adopted_info 필터링 (완화된 조건)
+            if optimal_answer:
+                # 원본 답변에 포함되어 있고, 최적 답변과 관련이 있는 정보만 필터링
+                adopted_filtered = [
+                    item.strip() for item in adopted
+                    if isinstance(item, str) and item.strip()
+                    and contains_text(original_text, item)
+                ]
+                # 필터링 결과가 비어있으면 원본 adopted_info 사용
+                if not adopted_filtered and adopted:
+                    adopted_filtered = [item.strip() for item in adopted if isinstance(item, str) and item.strip()]
+            else:
+                adopted_filtered = [
+                    item.strip() for item in adopted
+                    if isinstance(item, str) and item.strip() and contains_text(original_text, item)
+                ]
+                # 필터링 결과가 비어있으면 원본 adopted_info 사용
+                if not adopted_filtered and adopted:
+                    adopted_filtered = [item.strip() for item in adopted if isinstance(item, str) and item.strip()]
+
+            # rejected_info 필터링 (원본 답변에 포함된 정보만)
+            rejected_filtered = [
+                item.strip() for item in rejected
+                if isinstance(item, str) and item.strip()
+                and contains_text(original_text, item)
+            ]
+
+            # verification_results 업데이트 (모달에서 사용)
+            verification["채택된_정보"] = adopted_filtered if adopted_filtered else adopted
+            verification["제외된_정보"] = rejected_filtered
         
-        # 상태 정보 추가
-        if status != "성공":
-            formatted_response += f"\n*상태: {status}*"
+        # 상호모순 정보도 채팅 창에서는 제외 (필요시 모달에서 표시 가능)
         
         return formatted_response
         
@@ -3907,7 +4344,6 @@ class VideoChatView(APIView):
             # 1. 기존 분석 JSON 로드
             if video.analysis_json_path:
                 try:
-                    from django.conf import settings
                     json_path = os.path.join(settings.MEDIA_ROOT, video.analysis_json_path)
                     print(f"🔍 기존 JSON 파일 경로: {json_path}")
                     print(f"🔍 파일 존재 여부: {os.path.exists(json_path)}")
@@ -3929,7 +4365,6 @@ class VideoChatView(APIView):
             
             # 2. TeletoVision_AI 스타일 JSON 로드
             try:
-                from django.conf import settings
                 video_name = video.original_name or video.filename
                 detection_db_path = os.path.join(settings.MEDIA_ROOT, f"{video_name}-detection_db.json")
                 meta_db_path = os.path.join(settings.MEDIA_ROOT, f"{video_name}-meta_db.json")

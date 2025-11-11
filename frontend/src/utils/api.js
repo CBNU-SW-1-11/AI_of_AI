@@ -6,7 +6,7 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 // axios 인스턴스 생성
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 60000, // 60초 타임아웃 (증가)
+  timeout: 180000, // 180초 타임아웃 (이미지 분석 등 시간이 오래 걸리는 작업 고려)
   headers: {
     'Content-Type': 'application/json',
   },

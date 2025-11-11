@@ -89,11 +89,139 @@ const MainPage = () => {
 
   const handleModelModalConfirm = (models) => {
     if (!models || models.length === 0) return;
-    setSelectedModels(models);
+    
+    // pendingNewChatAction이 있으면 (왼쪽 사이드바 + 버튼) 그대로 실행
     if (pendingNewChatAction) {
       pendingNewChatAction(models);
       setPendingNewChatAction(null);
+      setIsModelModalOpen(false);
+      return;
     }
+    
+    // 오른쪽 위 + 버튼으로 모델 변경한 경우
+    // 현재 대화의 모델과 비교하여 변경되었으면 새 대화 생성
+    const params = new URLSearchParams(location.search);
+    const currentCid = params.get('cid');
+    
+    if (currentCid) {
+      try {
+        const history = JSON.parse(sessionStorage.getItem(HISTORY_KEY) || '[]');
+        const currentConversation = history.find(conv => conv.id === currentCid);
+        
+        if (currentConversation) {
+          const historyModels = (currentConversation.selectedModels || []).sort();
+          const newModels = [...models].sort();
+          
+          // 모델이 변경되었는지 확인
+          const modelsChanged = JSON.stringify(historyModels) !== JSON.stringify(newModels);
+          
+          if (modelsChanged) {
+            console.log('🔄 모델 변경 감지! 새 대화 생성');
+            console.log('이전 모델:', historyModels);
+            console.log('새 모델:', newModels);
+            
+            // 새 대화 생성
+            const newId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+            const newItem = {
+              id: newId,
+              title: "새 대화",
+              updatedAt: Date.now(),
+              selectedModels: models
+            };
+            
+            const updatedHistory = [newItem, ...history].slice(0, 100);
+            sessionStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
+            
+            // storage 이벤트 발생
+            window.dispatchEvent(new StorageEvent('storage', {
+              key: HISTORY_KEY,
+              newValue: JSON.stringify(updatedHistory)
+            }));
+            
+            // 메시지 복사 (모델 변경에 따라 optimal 메시지 처리)
+            const allMessages = JSON.parse(sessionStorage.getItem('aiofai:messages') || '{}');
+            const oldMessages = allMessages[currentCid] || {};
+            const newMessages = {};
+            
+            // 공통 모델의 메시지만 복사
+            const unchangedModels = historyModels.filter(model => newModels.includes(model));
+            unchangedModels.forEach(modelId => {
+              if (oldMessages[modelId]) {
+                newMessages[modelId] = [...oldMessages[modelId]];
+              }
+            });
+            
+            // 모든 AI가 바뀌었는지 확인
+            const allModelsChanged = unchangedModels.length === 0;
+            
+            // 모든 AI가 바뀌었을 때만 optimal 메시지 초기화
+            // 일부 AI만 바뀌었을 때는 optimal 메시지 유지
+            if (allModelsChanged) {
+              console.log('🔄 모든 AI가 변경됨 - optimal 메시지 초기화');
+              // optimal 메시지는 포함하지 않음 (초기화)
+            } else {
+              console.log('🔄 일부 AI만 변경됨 - optimal 메시지 유지');
+              // optimal 메시지 유지 (기존 모델이 남아있으므로)
+              if (oldMessages['optimal']) {
+                newMessages['optimal'] = [...oldMessages['optimal']];
+              }
+              // 유사도 데이터도 유지
+              if (oldMessages['_similarityData']) {
+                newMessages['_similarityData'] = { ...oldMessages['_similarityData'] };
+              }
+            }
+            
+            allMessages[newId] = newMessages;
+            sessionStorage.setItem('aiofai:messages', JSON.stringify(allMessages));
+            
+            // 모델 설정
+            setSelectedModels(models);
+            
+            // 새 대화로 이동
+            navigate(`/?cid=${newId}`);
+            
+            console.log('✅ 새 대화 생성 완료:', {
+              newId,
+              unchangedModels,
+              allModelsChanged,
+              newMessagesKeys: Object.keys(newMessages),
+              hasOptimal: !!newMessages['optimal'],
+              note: allModelsChanged ? '모든 AI 변경 - optimal 초기화' : '일부 AI 변경 - optimal 유지'
+            });
+          } else {
+            // 모델이 변경되지 않았으면 그냥 모델만 업데이트
+            setSelectedModels(models);
+          }
+        } else {
+          // 현재 대화를 찾을 수 없으면 새 대화 생성
+          const newId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+          const newItem = {
+            id: newId,
+            title: "새 대화",
+            updatedAt: Date.now(),
+            selectedModels: models
+          };
+          
+          const updatedHistory = [newItem, ...history].slice(0, 100);
+          sessionStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
+          
+          window.dispatchEvent(new StorageEvent('storage', {
+            key: HISTORY_KEY,
+            newValue: JSON.stringify(updatedHistory)
+          }));
+          
+          setSelectedModels(models);
+          navigate(`/?cid=${newId}`);
+        }
+      } catch (error) {
+        console.error('모델 변경 처리 중 오류:', error);
+        setSelectedModels(models);
+      }
+    } else {
+      // cid가 없으면 그냥 모델만 업데이트
+      setSelectedModels(models);
+    }
+    
     setIsModelModalOpen(false);
   };
 

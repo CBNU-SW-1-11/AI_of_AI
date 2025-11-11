@@ -1,19 +1,109 @@
 import React from 'react';
 import { TrendingUp, ThumbsUp, ThumbsDown } from 'lucide-react';
 
-const AIAnalysisModal = ({ isOpen, onClose, analysisData }) => {
+const normalizeModelName = (name) => {
+  if (!name) return '';
+  return String(name).toLowerCase().replace(/\s+/g, '-').replace(/_+/g, '-');
+};
+
+// 백엔드 모델 이름을 프론트엔드 모델 ID로 변환
+const backendToFrontendModelId = (backendName) => {
+  if (!backendName) return '';
+  
+  const originalName = String(backendName);
+  const normalized = originalName.toLowerCase().replace(/\s+/g, '-').replace(/_+/g, '-');
+  
+  // 백엔드 모델 이름 -> 프론트엔드 모델 ID 매핑
+  const modelMapping = {
+    // GPT 모델
+    'gpt-5': 'gpt-5',
+    'gpt-5-mini': 'gpt-5-mini',
+    'gpt-4.1': 'gpt-4.1',
+    'gpt-4.1-mini': 'gpt-4.1-mini',
+    'gpt-4o': 'gpt-4o',
+    'gpt-4o-mini': 'gpt-4o-mini',
+    'gpt-4-turbo': 'gpt-4-turbo',
+    'gpt-3.5-turbo': 'gpt-3.5-turbo',
+    
+    // Gemini 모델
+    'gemini-2.5-pro': 'gemini-2.5-pro',
+    'gemini-2.5-flash': 'gemini-2.5-flash',
+    'gemini-2.0-flash-exp': 'gemini-2.0-flash-exp',
+    'gemini-2.0-flash-lite': 'gemini-2.0-flash-lite',
+    
+    // Claude 모델
+    'claude-4-opus': 'claude-4-opus',
+    'claude-3.7-sonnet': 'claude-3.7-sonnet',
+    'claude-3.5-sonnet': 'claude-3.5-sonnet',
+    'claude-3.5-haiku': 'claude-3.5-haiku',
+    'claude-3-opus': 'claude-3-opus',
+    
+    // Clova 모델 (다양한 형식 지원)
+    'hcx-003': 'clova-hcx-003',
+    'hcx-dash-001': 'clova-hcx-dash-001',
+    'hyperclova-x-hcx-003': 'clova-hcx-003',
+    'hyperclova-x-hcx-dash-001': 'clova-hcx-dash-001',
+  };
+  
+  // 직접 매핑이 있으면 사용
+  if (modelMapping[normalized]) {
+    return modelMapping[normalized];
+  }
+  
+  // Clova 모델 특별 처리 (HCX-로 시작하는 경우, 다양한 형식 지원)
+  if (normalized.includes('hcx-003')) {
+    return 'clova-hcx-003';
+  }
+  if (normalized.includes('hcx-dash-001') || normalized.includes('hcx-dash')) {
+    return 'clova-hcx-dash-001';
+  }
+  if (normalized.startsWith('hcx-')) {
+    return `clova-${normalized}`;
+  }
+  
+  // 기본 정규화 반환
+  return normalized;
+};
+
+const AIAnalysisModal = ({ isOpen, onClose, analysisData, selectedModels = [] }) => {
   if (!isOpen) return null;
 
   // analysisData 구조 변경에 대응
   let rawAnalysisData = analysisData?.analysisData || analysisData || {};
   const rationale = analysisData?.rationale || "";
+
+  // selectedModels를 정규화된 모델 ID로 변환
+  const selectedModelSet = new Set((selectedModels || []).map(normalizeModelName));
+  const shouldFilter = selectedModelSet.size > 0;
+  
+  console.log('🔍 AIAnalysisModal - selectedModels:', selectedModels);
+  console.log('🔍 AIAnalysisModal - selectedModelSet:', Array.from(selectedModelSet));
+  console.log('🔍 AIAnalysisModal - rawAnalysisData keys:', Object.keys(rawAnalysisData));
+  console.log('🔍 AIAnalysisModal - rawAnalysisData 전체:', JSON.stringify(rawAnalysisData, null, 2));
   
   // 백엔드 데이터 형식 변환 (채택된_정보, 제외된_정보 -> adopted, rejected)
   // 백엔드: { "GPT-4o-Mini": { "정확성": "✅", "채택된_정보": [...], "제외된_정보": [...] } }
   // 프론트엔드: { "GPT-4o-Mini": { "accuracy": "✅", "adopted": [...], "rejected": [...] } }
   const actualAnalysisData = {};
+  
+  // rawAnalysisData의 모든 모델 처리
   Object.entries(rawAnalysisData).forEach(([modelName, data]) => {
     if (data && typeof data === 'object') {
+      // 백엔드 모델 이름을 프론트엔드 모델 ID로 변환
+      const frontendModelId = backendToFrontendModelId(modelName);
+      const normalizedBackendName = normalizeModelName(frontendModelId);
+      
+      console.log(`🔍 모델 매칭 체크: "${modelName}" -> "${frontendModelId}" -> "${normalizedBackendName}"`);
+      console.log(`🔍 selectedModelSet:`, Array.from(selectedModelSet));
+      console.log(`🔍 selectedModelSet에 포함? ${selectedModelSet.has(normalizedBackendName)}`);
+      
+      if (shouldFilter && !selectedModelSet.has(normalizedBackendName)) {
+        console.log(`❌ 필터링됨: ${modelName} (${normalizedBackendName})`);
+        return;
+      }
+      
+      console.log(`✅ 포함됨: ${modelName}`);
+
       actualAnalysisData[modelName] = {
         accuracy: data.정확성 || data.accuracy || '✅',
         confidence: parseInt(data.신뢰도 || data.confidence || '0'),
@@ -24,7 +114,35 @@ const AIAnalysisModal = ({ isOpen, onClose, analysisData }) => {
     }
   });
   
-  console.log('AIAnalysisModal - rawAnalysisData:', JSON.stringify(rawAnalysisData, null, 2));
+  // selectedModels에 있지만 rawAnalysisData에 없는 모델 확인
+  if (shouldFilter) {
+    const missingModels = [];
+    selectedModels.forEach(selectedModel => {
+      const normalizedSelected = normalizeModelName(selectedModel);
+      let found = false;
+      
+      // rawAnalysisData의 모든 키를 확인
+      for (const backendModelName of Object.keys(rawAnalysisData)) {
+        const frontendModelId = backendToFrontendModelId(backendModelName);
+        const normalizedBackend = normalizeModelName(frontendModelId);
+        if (normalizedBackend === normalizedSelected) {
+          found = true;
+          break;
+        }
+      }
+      
+      if (!found) {
+        missingModels.push(selectedModel);
+        console.warn(`⚠️ 선택된 모델 "${selectedModel}" (정규화: "${normalizedSelected}")이 rawAnalysisData에 없습니다!`);
+      }
+    });
+    
+    if (missingModels.length > 0) {
+      console.error(`❌ 누락된 모델들:`, missingModels);
+      console.error(`❌ rawAnalysisData에 있는 모델들:`, Object.keys(rawAnalysisData));
+    }
+  }
+  
   console.log('AIAnalysisModal - actualAnalysisData:', JSON.stringify(actualAnalysisData, null, 2));
   console.log('AIAnalysisModal - rationale:', rationale);
   console.log('AIAnalysisModal - Object.keys(actualAnalysisData):', Object.keys(actualAnalysisData));

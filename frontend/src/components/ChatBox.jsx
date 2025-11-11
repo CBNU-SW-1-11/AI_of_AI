@@ -182,27 +182,61 @@ const OptimalResponseRenderer = ({ content }) => {
     let currentContent = [];
     
     for (const line of lines) {
-      if (line.startsWith('**최적답변:**') || line.startsWith('**최적의 답변:**') || line.startsWith('## 🎯 정확한 답변') || line.startsWith('## 통합 답변') || line.startsWith('## 🎯 통합 답변')) {
+      const trimmedLine = line.trim();
+      
+      // 최적의 답변 섹션 감지
+      if (
+        trimmedLine.match(/^(##\s*)?(🎯\s*)?(최적의?\s*답변|통합\s*답변|정확한\s*답변)/i) ||
+        trimmedLine.match(/^\*\*(최적의?\s*답변|최적답변):\*\*/i)
+      ) {
         if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
         currentSection = 'integrated';
         currentContent = [];
-      } else if (line.startsWith('## 각 AI 분석') || line.startsWith('## 📊 각 AI 분석') || line.startsWith('**각 AI 분석:**') || line.startsWith('**각 LLM 검증 결과:**')) {
+      } 
+      // 답변 생성 근거 섹션 감지 (채팅 창에서 제외)
+      else if (
+        trimmedLine.match(/^(##\s*)?(📊\s*)?답변\s*생성\s*근거/i) ||
+        trimmedLine.match(/^\*\*(📊\s*)?답변\s*생성\s*근거:\*\*/i) ||
+        trimmedLine.match(/^(##\s*)?(📝\s*)?분석\s*근거/i) ||
+        trimmedLine.match(/^(##\s*)?(🔍\s*)?검증\s*결과/i) ||
+        trimmedLine.match(/^\*\*검증\s*결과:\*\*/i)
+      ) {
         if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
-        currentSection = 'analysis';
+        currentSection = 'rationale'; // 모달에서만 사용, 채팅 창에서는 렌더링 안 함
         currentContent = [];
-      } else if (line.startsWith('**검증 결과:**') || line.startsWith('## 분석 근거') || line.startsWith('## 🔍 분석 근거') || line.startsWith('## 🔍 검증 결과') || line.startsWith('**📊 답변 생성 근거:**')) {
+      } 
+      // 각 LLM 검증 결과 섹션 감지 (채팅 창에서 제외)
+      else if (
+        trimmedLine.match(/^(##\s*)?(📊\s*)?각\s*(AI|LLM)\s*(검증\s*결과|분석)/i) ||
+        trimmedLine.match(/^\*\*각\s*(AI|LLM)\s*(검증\s*결과|분석):\*\*/i)
+      ) {
         if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
-        currentSection = 'rationale';
+        currentSection = 'analysis'; // 모달에서만 사용, 채팅 창에서는 렌더링 안 함
         currentContent = [];
-      } else if (line.startsWith('## 최종 추천') || line.startsWith('## 🏆 최종 추천')) {
+      } 
+      // 최종 추천 섹션
+      else if (
+        trimmedLine.match(/^(##\s*)?(🏆\s*)?최종\s*추천/i)
+      ) {
         if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
         currentSection = 'recommendation';
         currentContent = [];
-      } else if (line.startsWith('## 추가 인사이트') || line.startsWith('## 💡 추가 인사이트') || line.startsWith('## ⚠️ 수정된 정보')) {
+      } 
+      // 추가 인사이트 섹션
+      else if (
+        trimmedLine.match(/^(##\s*)?(💡\s*)?추가\s*인사이트/i) ||
+        trimmedLine.match(/^(##\s*)?(⚠️\s*)?수정된\s*정보/i)
+      ) {
         if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
         currentSection = 'insights';
         currentContent = [];
-      } else if (line.trim() !== '') {
+      } 
+      // 내용이 있는 경우에만 추가
+      else if (trimmedLine !== '') {
+        // 섹션이 아직 정해지지 않았다면 integrated로 시작
+        if (!currentSection) {
+          currentSection = 'integrated';
+        }
         currentContent.push(line);
       }
     }
@@ -1258,10 +1292,100 @@ const ChatBox = () => {
                             <OptimalResponseRenderer 
                               content={message.text}
                               similarityData={message.similarityData}
+                              selectedModels={selectedModels}
                             />
                             
                             {/* Parse AI analysis data */}
                             {(() => {
+                              const normalizeModelName = (name) => {
+                                if (!name) return '';
+                                return String(name).toLowerCase().replace(/\s+/g, '-').replace(/_+/g, '-');
+                              };
+
+                              // 백엔드 모델 이름을 프론트엔드 모델 ID로 변환
+                              const backendToFrontendModelId = (backendName) => {
+                                if (!backendName) return '';
+                                
+                                const originalName = String(backendName);
+                                const normalized = originalName.toLowerCase().replace(/\s+/g, '-').replace(/_+/g, '-');
+                                
+                                // 백엔드 모델 이름 -> 프론트엔드 모델 ID 매핑
+                                const modelMapping = {
+                                  // GPT 모델
+                                  'gpt-5': 'gpt-5',
+                                  'gpt-5-mini': 'gpt-5-mini',
+                                  'gpt-4.1': 'gpt-4.1',
+                                  'gpt-4.1-mini': 'gpt-4.1-mini',
+                                  'gpt-4o': 'gpt-4o',
+                                  'gpt-4o-mini': 'gpt-4o-mini',
+                                  'gpt-4-turbo': 'gpt-4-turbo',
+                                  'gpt-3.5-turbo': 'gpt-3.5-turbo',
+                                  
+                                  // Gemini 모델
+                                  'gemini-2.5-pro': 'gemini-2.5-pro',
+                                  'gemini-2.5-flash': 'gemini-2.5-flash',
+                                  'gemini-2.0-flash-exp': 'gemini-2.0-flash-exp',
+                                  'gemini-2.0-flash-lite': 'gemini-2.0-flash-lite',
+                                  
+                                  // Claude 모델
+                                  'claude-4-opus': 'claude-4-opus',
+                                  'claude-3.7-sonnet': 'claude-3.7-sonnet',
+                                  'claude-3.5-sonnet': 'claude-3.5-sonnet',
+                                  'claude-3.5-haiku': 'claude-3.5-haiku',
+                                  'claude-3-opus': 'claude-3-opus',
+                                  
+                                  // Clova 모델 (다양한 형식 지원)
+                                  'hcx-003': 'clova-hcx-003',
+                                  'hcx-dash-001': 'clova-hcx-dash-001',
+                                  'hyperclova-x-hcx-003': 'clova-hcx-003',
+                                  'hyperclova-x-hcx-dash-001': 'clova-hcx-dash-001',
+                                };
+                                
+                                // 직접 매핑이 있으면 사용
+                                if (modelMapping[normalized]) {
+                                  return modelMapping[normalized];
+                                }
+                                
+                                // Clova 모델 특별 처리 (HCX-로 시작하는 경우, 다양한 형식 지원)
+                                if (normalized.includes('hcx-003')) {
+                                  return 'clova-hcx-003';
+                                }
+                                if (normalized.includes('hcx-dash-001') || normalized.includes('hcx-dash')) {
+                                  return 'clova-hcx-dash-001';
+                                }
+                                if (normalized.startsWith('hcx-')) {
+                                  return `clova-${normalized}`;
+                                }
+                                
+                                // 기본 정규화 반환
+                                return normalized;
+                              };
+
+                              const selectedModelSet = new Set(
+                                (selectedModels || []).map(normalizeModelName)
+                              );
+
+                              const filterAnalysisBySelection = (analysisData) => {
+                                if (!analysisData || typeof analysisData !== 'object') return {};
+                                if (selectedModelSet.size === 0) return analysisData;
+                                
+                                console.log('🔍 filterAnalysisBySelection - analysisData keys:', Object.keys(analysisData));
+                                console.log('🔍 filterAnalysisBySelection - selectedModelSet:', Array.from(selectedModelSet));
+                                
+                                return Object.fromEntries(
+                                  Object.entries(analysisData).filter(([backendModelName]) => {
+                                    // 백엔드 모델 이름을 프론트엔드 모델 ID로 변환
+                                    const frontendModelId = backendToFrontendModelId(backendModelName);
+                                    const normalizedBackendName = normalizeModelName(frontendModelId);
+                                    
+                                    const isIncluded = selectedModelSet.has(normalizedBackendName);
+                                    console.log(`🔍 filterAnalysisBySelection - "${backendModelName}" -> "${frontendModelId}" -> "${normalizedBackendName}" -> 포함? ${isIncluded}`);
+                                    
+                                    return isIncluded;
+                                  })
+                                );
+                              };
+
                               const parseOptimalResponseForAnalysis = (text) => {
                                 if (!text) return {};
                                 const sections = {};
@@ -1358,7 +1482,18 @@ const ChatBox = () => {
                               };
                               
                               const parsed = parseOptimalResponseForAnalysis(message.text);
-                              const hasAnalysis = parsed.analysis && Object.keys(parseAIAnalysisData(parsed.analysis)).length > 0;
+
+                              const filteredBackendAnalysis = filterAnalysisBySelection(message.analysisData);
+                              const backendAnalysisCount = Object.keys(filteredBackendAnalysis || {}).length;
+
+                              let analysisFromText = {};
+                              if ((!message.analysisData || backendAnalysisCount === 0) && parsed.analysis) {
+                                analysisFromText = filterAnalysisBySelection(parseAIAnalysisData(parsed.analysis));
+                              }
+
+                              const hasAnalysis =
+                                backendAnalysisCount > 0 ||
+                                (analysisFromText && Object.keys(analysisFromText).length > 0);
                               
                               return (hasSimilarityData || hasAnalysis) && (
                                 <div className="mt-3 flex justify-center gap-2">
@@ -1378,23 +1513,22 @@ const ChatBox = () => {
                                   {hasAnalysis && (
                                     <button
                                       onClick={() => {
-                                        // 백엔드에서 받은 JSON 데이터 우선 사용, 없으면 텍스트 파싱
-                                        let analysisData = message.analysisData;
+                                        let analysisData = filteredBackendAnalysis;
                                         let rationale = message.rationale;
-                                        
-                                        if (!analysisData || Object.keys(analysisData).length === 0) {
-                                          // 텍스트 파싱 폴백
-                                          analysisData = parseAIAnalysisData(parsed.analysis);
-                                          rationale = parsed.rationale || "";
+
+                                        if ((!analysisData || Object.keys(analysisData).length === 0) && parsed.analysis) {
+                                          analysisData = analysisFromText;
+                                          rationale = rationale || parsed.rationale || "";
                                         }
-                                        
+
                                         console.log('Setting AI analysis data:');
                                         console.log('- analysisData:', JSON.stringify(analysisData, null, 2));
                                         console.log('- rationale:', rationale);
                                         
                                         setAiAnalysisData({
                                           analysisData: analysisData,
-                                          rationale: rationale || ""
+                                          rationale: rationale || "",
+                                          selectedModels: selectedModels
                                         });
                                         setIsAIAnalysisModalOpen(true);
                                       }}
@@ -1601,6 +1735,7 @@ const ChatBox = () => {
         isOpen={isAIAnalysisModalOpen}
         onClose={() => setIsAIAnalysisModalOpen(false)}
         analysisData={aiAnalysisData}
+        selectedModels={selectedModels}
       />
     </div>
   );

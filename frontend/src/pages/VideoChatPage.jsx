@@ -1071,7 +1071,108 @@ const VideoChatPage = () => {
   );
 
   // Optimal Response Renderer Component (기본 채팅과 동일)
-  const OptimalResponseRenderer = ({ content, relevantFrames }) => {
+  const FRAME_PREVIEW_LIMIT = 3;
+
+  const MessageFramePreview = ({ frames, onFrameClick, maxInitial = FRAME_PREVIEW_LIMIT }) => {
+    const [showAllFrames, setShowAllFrames] = useState(false);
+    if (!frames || frames.length === 0) {
+      return null;
+    }
+    const displayedFrames = showAllFrames ? frames : frames.slice(0, maxInitial);
+    
+    return (
+      <div className="space-y-3">
+        <div className="grid grid-cols-1 gap-3">
+          {displayedFrames.map((frame, frameIndex) => (
+            <div 
+              key={frameIndex} 
+              className="group relative bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg hover:border-blue-300 transition-all duration-300 cursor-pointer"
+              onClick={() => onFrameClick && onFrameClick(frame)}
+            >
+              {/* 이미지 */}
+              <div className="relative">
+                <img
+                  src={`${api.defaults.baseURL}${frame.image_url}`}
+                  alt={`프레임 ${frame.image_id}`}
+                  className="w-full h-32 object-cover group-hover:scale-105 transition-transform duration-300"
+                  onError={(e) => {
+                    console.error(`프레임 이미지 로드 실패: ${frame.image_url}`);
+                    e.target.style.display = 'none';
+                  }}
+                />
+                {/* 호버 오버레이 */}
+                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-300 flex items-center justify-center">
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                    <div className="bg-white rounded-full p-2 shadow-lg">
+                      <svg className="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* 정보 패널 */}
+              <div className="p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center space-x-2">
+                    <div className="flex items-center bg-blue-50 text-blue-700 px-2 py-1 rounded-full text-xs font-medium">
+                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      {frame.timestamp.toFixed(1)}초
+                    </div>
+                    <div className="flex items-center bg-green-50 text-green-700 px-2 py-1 rounded-full text-xs font-medium">
+                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      {frame.relevance_score}점
+                    </div>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    프레임 #{frame.image_id}
+                  </div>
+                </div>
+                
+                {/* 감지된 객체 정보 */}
+                {frame.persons && frame.persons.length > 0 && (
+                  <div className="flex items-center space-x-2">
+                    <div className="flex items-center bg-purple-50 text-purple-700 px-2 py-1 rounded-full text-xs font-medium">
+                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      사람 {frame.persons.length}명
+                    </div>
+                    {frame.objects && frame.objects.length > 0 && (
+                      <div className="flex items-center bg-orange-50 text-orange-700 px-2 py-1 rounded-full text-xs font-medium">
+                        <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                        객체 {frame.objects.length}개
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        {frames.length > maxInitial && (
+          <div className="flex justify-center">
+            <button
+              onClick={() => setShowAllFrames(prev => !prev)}
+              className="px-3 py-2 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-full transition-colors duration-200"
+            >
+              {showAllFrames ? '프레임 접기' : `프레임 더 보기 (+${frames.length - maxInitial})`}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const OptimalResponseRenderer = ({ content, relevantFrames, onFrameSelect }) => {
+    const [showAllFrames, setShowAllFrames] = useState(false);
     const parseOptimalResponse = (text) => {
       if (!text || typeof text !== 'string') {
         return {};
@@ -1221,8 +1322,12 @@ const VideoChatPage = () => {
           <div className="optimal-section frames-section">
             <h3 className="section-title">📸 관련 프레임</h3>
             <div className="frames-grid">
-              {relevantFrames.map((frame, index) => (
-                <div key={index} className="frame-card">
+              {(showAllFrames ? relevantFrames : relevantFrames.slice(0, FRAME_PREVIEW_LIMIT)).map((frame, index) => (
+                <div
+                  key={index}
+                  className="frame-card hover:border-blue-300 transition-colors duration-200 cursor-pointer"
+                  onClick={() => onFrameSelect && onFrameSelect(frame)}
+                >
                   <div className="frame-info">
                     <span className="frame-timestamp">⏰ {frame.timestamp.toFixed(1)}초</span>
                     <span className="frame-score">🎯 {frame.relevance_score}점</span>
@@ -1251,6 +1356,16 @@ const VideoChatPage = () => {
                 </div>
               ))}
             </div>
+            {relevantFrames.length > FRAME_PREVIEW_LIMIT && (
+              <div className="flex justify-center mt-3">
+                <button
+                  onClick={() => setShowAllFrames(prev => !prev)}
+                  className="px-3 py-2 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-full transition-colors duration-200"
+                >
+                  {showAllFrames ? '프레임 접기' : `프레임 더 보기 (+${relevantFrames.length - FRAME_PREVIEW_LIMIT})`}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1519,6 +1634,10 @@ const VideoChatPage = () => {
                         <OptimalResponseRenderer 
                           content={message.content} 
                           relevantFrames={message.relevant_frames}
+                          onFrameSelect={(frame) => {
+                            setSelectedFrame(frame);
+                            setIsFrameModalOpen(true);
+                          }}
                         />
                       ) : (
                         <div>
@@ -1535,84 +1654,13 @@ const VideoChatPage = () => {
                                   관련 프레임 ({message.relevant_frames.length}개)
                                 </div>
                               </div>
-                              <div className="grid grid-cols-1 gap-3">
-                                {message.relevant_frames.map((frame, frameIndex) => (
-                                  <div 
-                                    key={frameIndex} 
-                                    className="group relative bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg hover:border-blue-300 transition-all duration-300 cursor-pointer"
-                                    onClick={() => {
-                                      setSelectedFrame(frame);
-                                      setIsFrameModalOpen(true);
-                                    }}
-                                  >
-                                    {/* 이미지 */}
-                                    <div className="relative">
-                                      <img
-                                        src={`${api.defaults.baseURL}${frame.image_url}`}
-                                        alt={`프레임 ${frame.image_id}`}
-                                        className="w-full h-32 object-cover group-hover:scale-105 transition-transform duration-300"
-                                        onError={(e) => {
-                                          console.error(`프레임 이미지 로드 실패: ${frame.image_url}`);
-                                          e.target.style.display = 'none';
-                                        }}
-                                      />
-                                      {/* 호버 오버레이 */}
-                                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-300 flex items-center justify-center">
-                                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                                          <div className="bg-white rounded-full p-2 shadow-lg">
-                                            <svg className="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-                                            </svg>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                    
-                                    {/* 정보 패널 */}
-                                    <div className="p-3">
-                                      <div className="flex items-center justify-between mb-2">
-                                        <div className="flex items-center space-x-2">
-                                          <div className="flex items-center bg-blue-50 text-blue-700 px-2 py-1 rounded-full text-xs font-medium">
-                                            <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                            </svg>
-                                            {frame.timestamp.toFixed(1)}초
-                                          </div>
-                                          <div className="flex items-center bg-green-50 text-green-700 px-2 py-1 rounded-full text-xs font-medium">
-                                            <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                            </svg>
-                                            {frame.relevance_score}점
-                                          </div>
-                                        </div>
-                                        <div className="text-xs text-gray-500">
-                                          프레임 #{frame.image_id}
-                                        </div>
-                                      </div>
-                                      
-                                      {/* 감지된 객체 정보 */}
-                                      {frame.persons && frame.persons.length > 0 && (
-                                        <div className="flex items-center space-x-2">
-                                          <div className="flex items-center bg-purple-50 text-purple-700 px-2 py-1 rounded-full text-xs font-medium">
-                                            <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                            </svg>
-                                            사람 {frame.persons.length}명
-                                          </div>
-                                          {frame.objects && frame.objects.length > 0 && (
-                                            <div className="flex items-center bg-orange-50 text-orange-700 px-2 py-1 rounded-full text-xs font-medium">
-                                              <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                                              </svg>
-                                              객체 {frame.objects.length}개
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
+                              <MessageFramePreview
+                                frames={message.relevant_frames}
+                                onFrameClick={(frame) => {
+                                  setSelectedFrame(frame);
+                                  setIsFrameModalOpen(true);
+                                }}
+                              />
                             </div>
                           )}
                           

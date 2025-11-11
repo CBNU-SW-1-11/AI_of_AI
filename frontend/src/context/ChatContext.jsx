@@ -36,6 +36,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
       // 메시지 불러오기
       const allMessages = JSON.parse(sessionStorage.getItem(MESSAGES_KEY) || '{}');
       const conversationMessages = allMessages[currentConversationId] || {};
+      
       console.log('📥 메시지 불러오기:', {
         conversationId: currentConversationId,
         messageKeys: Object.keys(conversationMessages),
@@ -375,15 +376,15 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
       const history = JSON.parse(sessionStorage.getItem(HISTORY_KEY) || '[]');
       const currentConversation = history.find(conv => conv.id === currentConversationId);
       
-      if (currentConversation && currentConversation.selectedModels && currentConversation.selectedModels.length > 0) {
-        // 배열을 정렬하여 비교 (순서 무관)
-        const historyModels = [...currentConversation.selectedModels].sort();
+      // 현재 대화가 있고, 모델이 설정되어 있는 경우
+      if (currentConversation) {
+        const historyModels = (currentConversation.selectedModels || []).sort();
         const currentModels = [...selectedModels].sort();
         
-        // 모델이 변경되었는지 확인
+        // 모델이 변경되었는지 확인 (빈 배열에서 모델이 추가된 경우도 포함)
         const modelsChanged = JSON.stringify(historyModels) !== JSON.stringify(currentModels);
         
-        if (modelsChanged) {
+        if (modelsChanged && currentModels.length > 0) {
           console.log('🔄 AI 모델 변경 감지! 새 대화 생성');
           console.log('이전 모델:', historyModels);
           console.log('현재 모델:', currentModels);
@@ -400,9 +401,14 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
           const conversationHistory = [];
           
           // 변경되지 않은 모델 중 하나를 선택하여 전체 대화 흐름 추출
-          const referenceModel = historyModels.find(modelId => 
+          let referenceModel = historyModels.find(modelId => 
             currentModels.includes(modelId) && oldMessages[modelId]
           );
+          
+          // 모든 AI가 바뀌었을 경우, 이전 대화의 첫 번째 모델을 참조 모델로 사용
+          if (!referenceModel && historyModels.length > 0) {
+            referenceModel = historyModels.find(modelId => oldMessages[modelId]);
+          }
           
           if (referenceModel && oldMessages[referenceModel]) {
             const referenceMessages = oldMessages[referenceModel];
@@ -472,7 +478,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
             _titleSet: true // 제목이 명시적으로 설정되었음을 표시
           };
           
-          // 변경되지 않은 모델들과 optimal의 메시지만 복사
+          // 변경되지 않은 모델의 메시지만 복사
           const newMessages = {};
           const unchangedModels = historyModels.filter(model => currentModels.includes(model));
           
@@ -483,22 +489,33 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
             }
           });
           
-          // optimal 메시지도 복사 (최적화 답변 유지)
-          if (oldMessages['optimal']) {
-            newMessages['optimal'] = [...oldMessages['optimal']];
-          }
+          // 모든 AI가 바뀌었는지 확인
+          const allModelsChanged = unchangedModels.length === 0;
           
-          // 유사도 데이터도 복사
-          if (oldMessages['_similarityData']) {
-            newMessages['_similarityData'] = { ...oldMessages['_similarityData'] };
+          // 모든 AI가 바뀌었을 때만 optimal 메시지 초기화
+          // 일부 AI만 바뀌었을 때는 optimal 메시지 유지
+          if (allModelsChanged) {
+            console.log('🔄 모든 AI가 변경됨 - optimal 메시지 초기화');
+            // optimal 메시지는 포함하지 않음 (초기화)
+          } else {
+            console.log('🔄 일부 AI만 변경됨 - optimal 메시지 유지');
+            // optimal 메시지 유지 (기존 모델이 남아있으므로)
+            if (oldMessages['optimal']) {
+              newMessages['optimal'] = [...oldMessages['optimal']];
+            }
+            // 유사도 데이터도 유지
+            if (oldMessages['_similarityData']) {
+              newMessages['_similarityData'] = { ...oldMessages['_similarityData'] };
+            }
           }
           
           console.log('✅ 복사된 메시지:', {
             unchangedModels,
-            newMessagesKeys: Object.keys(newMessages)
+            allModelsChanged,
+            newMessagesKeys: Object.keys(newMessages),
+            hasOptimal: !!newMessages['optimal']
           });
           
-          // 새 대화의 메시지 저장
           allMessages[newId] = newMessages;
           sessionStorage.setItem(MESSAGES_KEY, JSON.stringify(allMessages));
           
@@ -512,7 +529,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
             newValue: JSON.stringify(updatedHistory)
           }));
           
-          // 새 대화로 전환
+          // 새 대화로 전환 (optimal 메시지 제거 확인)
           setCurrentConversationId(newId);
           setMessages(newMessages);
           
@@ -644,21 +661,37 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
         } catch (error) {
           let errorText = `죄송합니다. ${modelId.toUpperCase()} 모델에서 오류가 발생했습니다.`;
           
-          if (error.response) {
+          // 백엔드에서 반환한 친화적인 오류 메시지 우선 사용
+          if (error.response?.data?.error) {
+            errorText = error.response.data.error;
+          } else if (error.response?.data?.response) {
+            // response 필드에 오류 메시지가 있는 경우
+            errorText = error.response.data.response;
+          } else if (error.response) {
             const status = error.response.status;
             if (status === 401) {
-              errorText = `${modelId.toUpperCase()} API 키가 유효하지 않습니다. 설정을 확인해주세요.`;
+              errorText = `API 키가 유효하지 않습니다. 설정을 확인해주세요.`;
             } else if (status === 429) {
-              errorText = `${modelId.toUpperCase()} API 사용량 한도를 초과했습니다. 잠시 후 다시 시도해주세요.`;
+              errorText = `모델 사용량이 초과되었습니다. 다른 모델을 사용해주세요.`;
             } else if (status >= 500) {
-              errorText = `${modelId.toUpperCase()} 서버에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.`;
+              errorText = `서버에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.`;
             } else {
-              errorText = `${modelId.toUpperCase()} 모델에서 오류가 발생했습니다. (오류 코드: ${status})`;
+              errorText = `오류가 발생했습니다. 잠시 후 다시 시도해주세요.`;
             }
           } else if (error.request) {
-            errorText = `${modelId.toUpperCase()} 모델에 연결할 수 없습니다. 인터넷 연결을 확인해주세요.`;
+            // 요청은 보냈지만 응답을 받지 못한 경우
+            const errorCode = error.code;
+            if (errorCode === 'ECONNREFUSED' || errorCode === 'ERR_CONNECTION_REFUSED') {
+              errorText = `백엔드 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해주세요.`;
+            } else if (errorCode === 'ETIMEDOUT' || errorCode === 'ECONNABORTED' || error.message?.includes('timeout')) {
+              errorText = `요청 시간이 초과되었습니다. 서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해주세요.`;
+            } else if (errorCode === 'ERR_NETWORK' || errorCode === 'ENOTFOUND') {
+              errorText = `네트워크 연결에 문제가 있습니다. 인터넷 연결을 확인해주세요.`;
+            } else {
+              errorText = `서버에 연결할 수 없습니다. 백엔드 서버가 실행 중인지 확인해주세요.`;
+            }
           } else {
-            errorText = `${modelId.toUpperCase()} 모델 처리 중 예상치 못한 오류가 발생했습니다.`;
+            errorText = `처리 중 예상치 못한 오류가 발생했습니다.`;
           }
           
           setLoadingProgress(prev => ({
@@ -843,10 +876,143 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
             console.log('Available similarity data:', newMessages['_similarityData']);
             console.log('Retrieved similarity data:', similarityData);
             console.log('Analysis data from backend:', JSON.stringify(data.analysisData, null, 2));
-            console.log('Rationale from backend:', data.rationale);
+          console.log('Rationale from backend:', data.rationale);
 
-            const optimalMessage = {
-              text: data.response || data.error || "최적화된 응답을 받았습니다.",
+          const formatOptimalResponse = (value) => {
+            if (value === null || value === undefined) return '';
+            if (typeof value === 'string') return value;
+
+            try {
+              let optimalAnswer =
+                value['최적의_답변'] ||
+                value.optimal_answer ||
+                value.answer ||
+                value.text ||
+                '';
+
+              const verificationResults =
+                value['llm_검증_결과'] ||
+                value.verification_results ||
+                value.analysis ||
+                {};
+
+              const rationale =
+                value['분석_근거'] ||
+                value.analysis_rationale ||
+                value.rationale ||
+                '';
+
+              if (!optimalAnswer) {
+                const verificationEntries = Object.entries(verificationResults || {});
+                if (verificationEntries.length > 0) {
+                  const sortedByConfidence = verificationEntries
+                    .map(([modelName, result]) => {
+                      if (!result || typeof result !== 'object') return null;
+                      const accuracy = result['정확성'] || result.accuracy || '';
+                      const confidence = parseInt(result['신뢰도'] || result.confidence || '0', 10);
+                      const adopted = result['채택된_정보'] || result.adopted_info || result.adopted || [];
+                      return {
+                        modelName,
+                        accuracy,
+                        confidence: Number.isNaN(confidence) ? 0 : confidence,
+                        adopted: Array.isArray(adopted) ? adopted : [],
+                      };
+                    })
+                    .filter(Boolean)
+                    .sort((a, b) => b.confidence - a.confidence);
+
+                  const bestEntry =
+                    sortedByConfidence.find(entry => entry.accuracy === '✅' && entry.adopted.length > 0) ||
+                    sortedByConfidence[0];
+
+                  if (bestEntry) {
+                    const adoptedText = bestEntry.adopted.join('\n');
+                    optimalAnswer = `${bestEntry.modelName} 모델이 ${bestEntry.confidence}% 신뢰도로 선택되었습니다.\n\n${adoptedText}`;
+                  }
+                }
+              }
+
+              const recommendation =
+                value['최종_추천'] ||
+                value.recommendation ||
+                '';
+
+              const insights =
+                value['추가_인사이트'] ||
+                value.additional_insights ||
+                '';
+
+              let markdown = '';
+
+              if (optimalAnswer) {
+                markdown += `## 최적의 답변\n\n${optimalAnswer}\n\n`;
+              }
+
+              const entries = Object.entries(verificationResults || {});
+              if (entries.length > 0) {
+                markdown += '## 각 LLM 검증 결과\n';
+                entries.forEach(([modelName, result]) => {
+                  if (!result || typeof result !== 'object') return;
+                  const accuracy = result['정확성'] || result.accuracy || '';
+                  const error = result['오류'] || result.error || '';
+                  const confidence = result['신뢰도'] || result.confidence || '';
+                  const adopted = result['채택된_정보'] || result.adopted_info || result.adopted || [];
+                  const rejected = result['제외된_정보'] || result.rejected_info || result.rejected || [];
+
+                  markdown += `\n### ${modelName}\n`;
+                  if (accuracy) markdown += `- 정확성: ${accuracy}\n`;
+                  if (error) markdown += `- 오류: ${error}\n`;
+                  if (confidence !== '') markdown += `- 신뢰도: ${confidence}%\n`;
+                  if (Array.isArray(adopted) && adopted.length > 0) {
+                    adopted.forEach(item => {
+                      if (item && String(item).trim()) {
+                        markdown += `- 채택된 정보: ${item}\n`;
+                      }
+                    });
+                  }
+                  if (Array.isArray(rejected) && rejected.length > 0) {
+                    rejected.forEach(item => {
+                      if (item && String(item).trim()) {
+                        markdown += `- 제외된 정보: ${item}\n`;
+                      }
+                    });
+                  }
+                });
+                markdown += '\n';
+              }
+
+              if (rationale) {
+                markdown += `## 분석 근거\n\n${rationale}\n\n`;
+              }
+
+              if (recommendation) {
+                markdown += `## 최종 추천\n\n${recommendation}\n\n`;
+              }
+
+              if (insights) {
+                markdown += `## 추가 인사이트\n\n${insights}\n\n`;
+              }
+
+              if (markdown.trim()) {
+                return markdown.trim();
+              }
+
+              return JSON.stringify(value, null, 2);
+            } catch (formatError) {
+              console.warn('최적화 응답 포맷 변환 실패:', formatError);
+              try {
+                return JSON.stringify(value, null, 2);
+              } catch {
+                return String(value);
+              }
+            }
+          };
+
+          const formattedResponse = formatOptimalResponse(data.response || data.error || "최적화된 응답을 받았습니다.");
+          console.log('Formatted optimal response:', formattedResponse);
+
+          const optimalMessage = {
+            text: formattedResponse,
               isUser: false,
               timestamp: new Date().toISOString(),
               id: Date.now() + Math.random() + 'optimal',
@@ -884,26 +1050,42 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
           
           let errorText = `죄송합니다. OPTIMAL 모델에서 오류가 발생했습니다.`;
           
-          if (error.response) {
+          // 백엔드에서 반환한 친화적인 오류 메시지 우선 사용
+          if (error.response?.data?.error) {
+            errorText = error.response.data.error;
+          } else if (error.response?.data?.response) {
+            // response 필드에 오류 메시지가 있는 경우
+            errorText = error.response.data.response;
+          } else if (error.response) {
             const status = error.response.status;
             const errorData = error.response.data;
             console.error('❌ OPTIMAL 서버 응답 오류:', { status, errorData });
             
             if (status === 401) {
-              errorText = `OPTIMAL 모델 API 키가 유효하지 않습니다. 설정을 확인해주세요.`;
+              errorText = `API 키가 유효하지 않습니다. 설정을 확인해주세요.`;
             } else if (status === 429) {
-              errorText = `OPTIMAL 모델 API 사용량 한도를 초과했습니다. 잠시 후 다시 시도해주세요.`;
+              errorText = `모델 사용량이 초과되었습니다. 다른 모델을 사용해주세요.`;
             } else if (status >= 500) {
-              errorText = `OPTIMAL 모델 서버에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.`;
+              errorText = `서버에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.`;
             } else {
-              errorText = `OPTIMAL 모델에서 오류가 발생했습니다. (오류 코드: ${status})${errorData?.error ? ': ' + errorData.error : ''}`;
+              errorText = `오류가 발생했습니다. 잠시 후 다시 시도해주세요.`;
             }
           } else if (error.request) {
+            // 요청은 보냈지만 응답을 받지 못한 경우
             console.error('❌ OPTIMAL 요청 전송 실패:', error.request);
-            errorText = `OPTIMAL 모델에 연결할 수 없습니다. 인터넷 연결을 확인해주세요.`;
+            const errorCode = error.code;
+            if (errorCode === 'ECONNREFUSED' || errorCode === 'ERR_CONNECTION_REFUSED') {
+              errorText = `백엔드 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해주세요.`;
+            } else if (errorCode === 'ETIMEDOUT' || errorCode === 'ECONNABORTED' || error.message?.includes('timeout')) {
+              errorText = `요청 시간이 초과되었습니다. 이미지 분석 등 시간이 오래 걸리는 작업일 수 있습니다. 잠시 후 다시 시도해주세요.`;
+            } else if (errorCode === 'ERR_NETWORK' || errorCode === 'ENOTFOUND') {
+              errorText = `네트워크 연결에 문제가 있습니다. 인터넷 연결을 확인해주세요.`;
+            } else {
+              errorText = `서버에 연결할 수 없습니다. 백엔드 서버가 실행 중인지 확인해주세요.`;
+            }
           } else {
             console.error('❌ OPTIMAL 예상치 못한 오류:', error);
-            errorText = `OPTIMAL 모델 처리 중 예상치 못한 오류가 발생했습니다: ${error.message || '알 수 없는 오류'}`;
+            errorText = `처리 중 예상치 못한 오류가 발생했습니다.`;
           }
           
           const errorMessage = {

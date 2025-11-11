@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { api } from '../utils/api';
 import AIAnalysisModal from './AIAnalysisModal';
 import ReactMarkdown from 'react-markdown';
@@ -93,43 +93,195 @@ const CopyAllButton = ({ content }) => {
   );
 };
 
-const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick, similarityData }) => {
+const FRAME_PREVIEW_LIMIT = 3;
+
+const FramePreviewList = ({ frames, onFrameClick, maxInitial = FRAME_PREVIEW_LIMIT }) => {
+  const safeFrames = useMemo(() => {
+    if (!Array.isArray(frames)) return [];
+    return [...frames].sort((a, b) => {
+      const scoreDiff = (b?.relevance_score ?? 0) - (a?.relevance_score ?? 0);
+      if (scoreDiff !== 0) return scoreDiff;
+      return (a?.timestamp ?? 0) - (b?.timestamp ?? 0);
+    });
+  }, [frames]);
+
+  const limitedCount = Math.min(safeFrames.length, maxInitial ?? safeFrames.length);
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  useEffect(() => {
+    if (limitedCount === 0) {
+      if (currentIndex !== 0) setCurrentIndex(0);
+    } else if (currentIndex >= limitedCount) {
+      setCurrentIndex(0);
+    }
+  }, [limitedCount, currentIndex]);
+
+  if (limitedCount === 0) return null;
+
+  const limitedFrames = safeFrames.slice(0, limitedCount);
+  const total = limitedFrames.length;
+  const safeIndex = Math.min(currentIndex, total - 1);
+  const currentFrame = limitedFrames[safeIndex];
+
+  const goPrev = () => setCurrentIndex(prev => (prev - 1 + total) % total);
+  const goNext = () => setCurrentIndex(prev => (prev + 1) % total);
+  
+  return (
+    <div className="relative">
+      <div
+        className="frame-card cursor-pointer hover:border-blue-300 transition-colors duration-200"
+        onClick={() => onFrameClick && onFrameClick(currentFrame)}
+      >
+        <div className="relative">
+          <img
+            src={`${api.defaults.baseURL}${currentFrame.image_url}`}
+            alt={`프레임 ${currentFrame.image_id}`}
+            className="frame-image"
+            onError={(e) => {
+              console.error(`프레임 이미지 로드 실패: ${currentFrame.image_url}`);
+              e.target.style.display = 'none';
+            }}
+          />
+          {total > 1 && (
+            <>
+              <button
+                type="button"
+                className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white text-gray-700 rounded-full p-1 shadow transition"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  goPrev();
+                }}
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white text-gray-700 rounded-full p-1 shadow transition"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  goNext();
+                }}
+              >
+                ›
+              </button>
+            </>
+          )}
+        </div>
+        <div className="frame-info">
+          <span className="frame-timestamp">⏰ {currentFrame.timestamp.toFixed(1)}초</span>
+          <span className="frame-score">🎯 {currentFrame.relevance_score}점</span>
+        </div>
+        <div className="flex justify-between items-center px-2 pb-2 text-xs text-gray-500">
+          <span>프레임 #{currentFrame.image_id}</span>
+          <span>{safeIndex + 1}/{total}</span>
+        </div>
+        <div className="frame-tags">
+          {currentFrame.persons && currentFrame.persons.length > 0 && (
+            <span className="frame-tag person-tag">
+              👤 사람 {currentFrame.persons.length}명
+            </span>
+          )}
+          {currentFrame.objects && currentFrame.objects.length > 0 && (
+            <span className="frame-tag object-tag">
+              📦 객체 {currentFrame.objects.length}개
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick, similarityData, selectedModels = [] }) => {
   const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
   const parseOptimalResponse = (text) => {
     if (!text || typeof text !== 'string') return {};
-    
+
+    const normalized = text.replace(/\r\n/g, '\n');
     const sections = {};
-    const lines = text.split('\n');
-    let currentSection = '';
-    let currentContent = [];
-    
+    const lines = normalized.split('\n');
+    let currentSection = null;
+    let buffer = [];
+
+    const commitSection = () => {
+      if (!currentSection) return;
+      const content = buffer.join('\n').trim();
+      if (content) {
+        sections[currentSection] = content;
+      }
+      buffer = [];
+    };
+
     for (const line of lines) {
-      if (line.startsWith('## 통합 답변') || line.startsWith('## 🎯 통합 답변')) {
-        if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
+      const trimmed = line.trim();
+      if (!trimmed) {
+        if (currentSection) buffer.push('');
+        continue;
+      }
+
+      // 최적의 답변 섹션 감지
+      if (
+        trimmed.match(/^(##\s*)?(🎯\s*)?(최적의?\s*답변|통합\s*답변|정확한\s*답변)/i) ||
+        trimmed.match(/^\*\*(최적의?\s*답변|최적답변):\*\*/i)
+      ) {
+        commitSection();
         currentSection = 'integrated';
-        currentContent = [];
-      } else if (line.startsWith('## 각 AI 분석') || line.startsWith('## 📊 각 AI 분석') || line.includes('**각 AI 분석**')) {
-        if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
-        currentSection = 'analysis';
-        currentContent = [];
-      } else if (line.startsWith('## 분석 근거') || line.startsWith('## 📝 분석 근거')) {
-        if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
-        currentSection = 'rationale';
-        currentContent = [];
-      } else if (line.startsWith('## 최종 추천') || line.startsWith('## 🏆 최종 추천')) {
-        if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
+        continue;
+      }
+      // 답변 생성 근거 섹션 감지 (채팅 창에서 제외)
+      else if (
+        trimmed.match(/^(##\s*)?(📊\s*)?답변\s*생성\s*근거/i) ||
+        trimmed.match(/^\*\*(📊\s*)?답변\s*생성\s*근거:\*\*/i) ||
+        trimmed.match(/^(##\s*)?(📝\s*)?분석\s*근거/i) ||
+        trimmed.match(/^(##\s*)?(🔍\s*)?검증\s*결과/i) ||
+        trimmed.match(/^\*\*검증\s*결과:\*\*/i)
+      ) {
+        commitSection();
+        currentSection = 'rationale'; // 모달에서만 사용, 채팅 창에서는 렌더링 안 함
+        continue;
+      }
+      // 각 LLM 검증 결과 섹션 감지 (채팅 창에서 제외)
+      else if (
+        trimmed.match(/^(##\s*)?(📊\s*)?각\s*(AI|LLM)\s*(검증\s*결과|분석)/i) ||
+        trimmed.match(/^\*\*각\s*(AI|LLM)\s*(검증\s*결과|분석):\*\*/i)
+      ) {
+        commitSection();
+        currentSection = 'analysis'; // 모달에서만 사용, 채팅 창에서는 렌더링 안 함
+        continue;
+      }
+      // 최종 추천 섹션
+      else if (
+        trimmed.match(/^(##\s*)?(🏆\s*)?최종\s*추천/i)
+      ) {
+        commitSection();
         currentSection = 'recommendation';
-        currentContent = [];
-      } else if (line.startsWith('## 추가 인사이트') || line.startsWith('## 💡 추가 인사이트')) {
-        if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
+        continue;
+      }
+      // 추가 인사이트 섹션
+      else if (
+        trimmed.match(/^(##\s*)?(💡\s*)?추가\s*인사이트/i) ||
+        trimmed.match(/^(##\s*)?(⚠️\s*)?수정된\s*정보/i)
+      ) {
+        commitSection();
         currentSection = 'insights';
-        currentContent = [];
-      } else if (line.trim() !== '') {
-        currentContent.push(line);
+        continue;
+      }
+
+      if (currentSection) {
+        buffer.push(line);
+      } else {
+        // 아직 섹션을 만나기 전의 내용은 통합 답변으로 간주
+        currentSection = 'integrated';
+        buffer.push(line);
       }
     }
-    
-    if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
+
+    commitSection();
+
+    if (!sections.integrated && normalized.trim()) {
+      sections.integrated = normalized.trim();
+    }
+
     return sections;
   };
 
@@ -140,14 +292,18 @@ const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick, simila
     let currentAnalysis = { pros: [], cons: [] };
     
     for (const line of lines) {
-      if (line.startsWith('### ')) {
+      const trimmedLine = line.trim();
+
+      if (/^(?:###|####)\s+/.test(trimmedLine)) {
         if (currentAI) analyses[currentAI] = currentAnalysis;
-        currentAI = line.replace('### ', '').trim();
+        currentAI = trimmedLine.replace(/^(?:###|####)\s+/, '').trim();
         currentAnalysis = { pros: [], cons: [] };
-      } else if (line.includes('- 장점:')) {
-        currentAnalysis.pros.push(line.replace('- 장점:', '').trim());
-      } else if (line.includes('- 단점:')) {
-        currentAnalysis.cons.push(line.replace('- 단점:', '').trim());
+      } else if (trimmedLine.includes('- 장점:')) {
+        currentAnalysis.pros.push(trimmedLine.replace('- 장점:', '').trim());
+      } else if (trimmedLine.includes('- 단점:')) {
+        currentAnalysis.cons.push(trimmedLine.replace('- 단점:', '').trim());
+      } else if (trimmedLine.startsWith('-')) {
+        currentAnalysis.pros.push(trimmedLine.slice(1).trim());
       }
     }
     
@@ -167,7 +323,12 @@ const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick, simila
   }
 
   const sections = parseOptimalResponse(content);
+  console.log('OptimalResponseRenderer - parsed sections:', sections);
   const analysisData = sections.analysis ? parseAIAnalysis(sections.analysis) : {};
+  const hasStructuredAnalysis = analysisData && Object.keys(analysisData).some(key => {
+    const value = analysisData[key];
+    return value && (value.pros.length > 0 || value.cons.length > 0);
+  });
   
   // 헤더가 없는 경우 처리
   if (!sections.integrated && content.trim()) {
@@ -196,68 +357,6 @@ const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick, simila
               {sections.integrated}
             </ReactMarkdown>
             <CopyAllButton content={sections.integrated} />
-          </div>
-        </div>
-      )}
-      
-      {sections.analysis && (
-        <div className="optimal-section analysis-section">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="section-title">각 AI 분석</h3>
-            {similarityData && (
-              <button
-                onClick={() => setIsAnalysisModalOpen(true)}
-                className="px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors duration-200"
-                style={{ backgroundColor: 'rgb(139, 168, 138)' }}
-              >
-                📊 유사도 분석 보기
-              </button>
-            )}
-          </div>
-          <div className="analysis-grid">
-            {Object.entries(analysisData).map(([aiName, analysis]) => (
-              <div key={aiName} className="analysis-item">
-                <h4 className="analysis-ai-name">{aiName}</h4>
-                {analysis.pros.length > 0 && (
-                  <div className="analysis-pros">
-                    <strong>장점:</strong>
-                    <ul>
-                      {analysis.pros.map((pro, index) => (
-                        <li key={index}>{pro}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {analysis.cons.length > 0 && (
-                  <div className="analysis-cons">
-                    <strong>단점:</strong>
-                    <ul>
-                      {analysis.cons.map((con, index) => (
-                        <li key={index}>{con}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      
-      {sections.rationale && (
-        <div className="optimal-section rationale-section">
-          <h3 className="section-title">분석 근거</h3>
-          <div className="section-content">
-            <ReactMarkdown 
-              remarkPlugins={[remarkGfm]}
-              components={{
-                code: CodeBlock,
-                pre: ({ children, ...props }) => <pre {...props}>{children}</pre>
-              }}
-            >
-              {sections.rationale}
-            </ReactMarkdown>
-            <CopyAllButton content={sections.rationale} />
           </div>
         </div>
       )}
@@ -301,41 +400,7 @@ const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick, simila
       {relevantFrames && relevantFrames.length > 0 && (
         <div className="optimal-section frames-section">
           <h3 className="section-title">📸 관련 프레임</h3>
-          <div className="frames-grid">
-            {relevantFrames.map((frame, index) => (
-              <div 
-                key={index} 
-                className="frame-card cursor-pointer"
-                onClick={() => onFrameClick && onFrameClick(frame)}
-              >
-                <div className="frame-info">
-                  <span className="frame-timestamp">⏰ {frame.timestamp.toFixed(1)}초</span>
-                  <span className="frame-score">🎯 {frame.relevance_score}점</span>
-                </div>
-                <img
-                  src={`${api.defaults.baseURL}${frame.image_url}`}
-                  alt={`프레임 ${frame.image_id}`}
-                  className="frame-image"
-                  onError={(e) => {
-                    console.error(`프레임 이미지 로드 실패: ${frame.image_url}`);
-                    e.target.style.display = 'none';
-                  }}
-                />
-                <div className="frame-tags">
-                  {frame.persons && frame.persons.length > 0 && (
-                    <span className="frame-tag person-tag">
-                      👤 사람 {frame.persons.length}명
-                    </span>
-                  )}
-                  {frame.objects && frame.objects.length > 0 && (
-                    <span className="frame-tag object-tag">
-                      📦 객체 {frame.objects.length}개
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+          <FramePreviewList frames={relevantFrames} onFrameClick={onFrameClick} />
         </div>
       )}
 
@@ -345,6 +410,7 @@ const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick, simila
           isOpen={isAnalysisModalOpen}
           onClose={() => setIsAnalysisModalOpen(false)}
           similarityData={similarityData}
+          selectedModels={selectedModels}
         />
       )}
     </div>
