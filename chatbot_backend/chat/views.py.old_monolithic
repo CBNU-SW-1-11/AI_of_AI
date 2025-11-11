@@ -1,0 +1,2816 @@
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.parsers import MultiPartParser, FormParser
+from django.http import HttpResponse, Http404
+from chat.serializers import UserSerializer, VideoChatSessionSerializer, VideoChatMessageSerializer, VideoAnalysisCacheSerializer
+from chat.models import VideoChatSession, VideoChatMessage, VideoAnalysisCache, Video
+from .services.video_analysis_service import video_analysis_service
+from .enhanced_video_chat_handler import get_video_chat_handler
+from .person_search_handler import handle_person_search_command
+from .advanced_search_view import InterVideoSearchView, IntraVideoSearchView, TemporalAnalysisView
+from .advanced_command_handler import handle_inter_video_search_command, handle_intra_video_search_command, handle_temporal_analysis_command
+from .ai_response_generator import ai_response_generator
+from .evaluation_metrics import evaluation_metrics
+from .conversation_memory import conversation_memory
+from .integrated_chat_service import integrated_chat_service
+from .llm_cache_manager import llm_cache_manager, conversation_context_manager
+from django.utils import timezone
+import threading
+import openai
+import anthropic
+from groq import Groq
+import ollama
+import anthropic
+import google.generativeai as genai
+import os
+import sys
+import io
+import PyPDF2
+from PIL import Image
+import pytesseract
+import hashlib
+import time
+# import cv2  # NumPy 호환성 문제로 조건부 import
+# import numpy as np  # NumPy 호환성 문제로 조건부 import
+from pdf2image import convert_from_bytes
+import base64
+import tempfile
+from django.core.files.storage import default_storage
+from django.core.files.base import ContentFile
+import requests
+import uuid
+import hmac
+import hashlib
+from django.contrib.auth import get_user_model
+from chat.models import User, SocialAccount
+from django.conf import settings
+
+# 분리된 모듈들 import
+from .config.ai_config import (
+    KOREAN_LANGUAGE_INSTRUCTION,
+    OPENAI_MODEL_COMPLETION_LIMITS,
+    DEFAULT_OPENAI_COMPLETION_LIMIT
+)
+from .utils.error_handlers import get_user_friendly_error_message
+from .utils.file_utils import (
+    extract_text_from_pdf,
+    extract_text_from_pdf_ocr,
+    extract_text_from_image,
+    process_uploaded_file,
+    summarize_content,
+    analyze_image_with_ollama
+)
+from .utils.ai_utils import (
+    enforce_korean_instruction,
+    get_openai_completion_limit,
+    generate_optimal_response_with_ollama,
+    generate_optimal_response
+)
+from .utils.chatbot import ChatBot, chatbots
+from .services.optimal_response import (
+    collect_multi_llm_responses,
+    detect_conflicts_in_responses,
+    judge_and_generate_optimal_response,
+    call_judge_model,
+    parse_judge_response,
+    create_fallback_result,
+    format_optimal_response,
+    classify_question_type,
+    detect_question_type_from_content
+)
+from .services.video_search import (
+    quick_web_verify,
+    search_wikipedia,
+    extract_search_terms_from_question,
+    search_wikipedia_api,
+    get_wikipedia_full_text,
+    search_google_simple
+)
+import json
+import ast
+import logging
+import re
+from datetime import datetime, timedelta
+
+# 로거 설정
+logger = logging.getLogger(__name__)
+
+# 인코딩 문제 해결을 위한 설정
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+
+class ChatView(APIView):
+    def post(self, request, bot_name):
+        try:
+            data = request.data
+            user_message = data.get('message')
+            uploaded_file = request.FILES.get('file')
+            
+            if not user_message and not uploaded_file:
+                return Response({'error': 'No message or file provided'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            chatbot = chatbots.get(bot_name)
+            if not chatbot:
+                print(f"❌ Invalid bot name: {bot_name}")
+                print(f"   사용 가능한 모델: {list(chatbots.keys())[:10]}...")
+                return Response({'error': 'Invalid bot name'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # 파일이 업로드된 경우 처리
+            if uploaded_file:
+                try:
+                    print(f"파일 업로드 감지: {uploaded_file.name}")
+                    
+                    # 파일에서 텍스트 추출 또는 이미지 파일 식별
+                    extracted_content = process_uploaded_file(uploaded_file)
+                    print(f"📄 추출된 텍스트 길이: {len(extracted_content)}자")
+                    print(f"📄 추출된 내용 미리보기 (처음 200자): {extracted_content[:200]}...")
+                    
+                    # Ollama로 분석 (이미지는 직접, 텍스트는 전체 내용 전달)
+                    print("Ollama를 사용하여 파일 분석 중...")
+                    
+                    # 임시 파일 저장
+                    temp_file_path = None
+                    if extracted_content.startswith("IMAGE_FILE:"):
+                        # 이미지 파일을 임시로 저장
+                        import tempfile
+                        import shutil
+                        temp_dir = tempfile.mkdtemp()
+                        temp_file_path = os.path.join(temp_dir, uploaded_file.name)
+                        with open(temp_file_path, 'wb') as temp_file:
+                            uploaded_file.seek(0)  # 파일 포인터 리셋
+                            for chunk in uploaded_file.chunks():
+                                temp_file.write(chunk)
+                        print(f"이미지 파일 임시 저장: {temp_file_path}")
+                    
+                    # 사용자가 질문을 입력한 경우: 전체 내용 전달 (요약하지 않음)
+                    # 질문이 없으면 요약 모드 사용
+                    use_full_content = bool(user_message and user_message.strip())
+                    
+                    if use_full_content:
+                        print(f"📋 전체 내용 모드: 추출된 텍스트({len(extracted_content)}자)를 그대로 전달합니다.")
+                    else:
+                        print(f"📝 요약 모드: Ollama로 요약합니다.")
+                    
+                    analyzed_content = summarize_content(
+                        extracted_content, 
+                        file_path=temp_file_path,
+                        full_content=use_full_content
+                    )
+                    
+                    print(f"📊 최종 분석 내용 길이: {len(analyzed_content)}자")
+                    
+                    # 사용자 메시지와 파일 분석 결과를 결합
+                    if user_message and user_message.strip():
+                        # 사용자가 질문을 입력한 경우 - 전체 내용 전달
+                        print(f"📝 사용자 질문과 파일 함께 처리: {user_message}")
+                        if uploaded_file.name.lower().endswith('.pdf'):
+                            final_message = f"""다음은 업로드된 PDF 문서의 전체 내용입니다:
+
+{analyzed_content}
+
+---
+사용자 질문: {user_message}
+
+위 PDF 문서의 전체 내용을 바탕으로 사용자의 질문에 정확하고 자세하게 한국어로 답변해주세요.
+문서에 연습 문제가 포함되어 있다면, 그 연습 문제를 찾아서 풀어주세요.
+문서의 모든 내용을 주의 깊게 읽고, 관련된 정보를 모두 포함하여 답변해주세요."""
+                        else:
+                            # 이미지인 경우 (Ollama가 영어로 분석한 결과를 여러 LLM이 한국어로 답변)
+                            final_message = f"""다음은 업로드된 이미지를 Ollama로 분석한 결과입니다 (영어):
+
+{analyzed_content}
+
+사용자 질문: {user_message}
+
+위 영어로 작성된 이미지 분석 결과를 바탕으로 사용자의 질문에 한국어로 자세히 답변해주세요. 이미지 분석 결과의 내용을 충실히 반영하여 답변해주세요."""
+                    else:
+                        # 사용자 메시지가 없으면 기본 분석 요청
+                        if uploaded_file.name.lower().endswith('.pdf'):
+                            final_message = f"다음 문서 내용을 한국어로 요약해주세요:\n\n{analyzed_content}"
+                        else:
+                            final_message = f"""다음은 업로드된 이미지를 Ollama로 분석한 결과입니다 (영어):
+
+{analyzed_content}
+
+위 영어로 작성된 이미지 분석 결과를 바탕으로 이 이미지에 대해 한국어로 자세하고 자연스럽게 설명해주세요. 이미지 분석 결과의 내용을 충실히 반영하여 답변해주세요."""
+                    print("분석 완료")
+                except Exception as e:
+                    print(f"파일 처리 오류: {str(e)}")
+                    final_message = f"파일 처리 중 오류가 발생했습니다: {str(e)}"
+            else:
+                final_message = user_message
+
+            # optimal 모델인 경우 특별 처리
+            if bot_name == 'optimal':
+                # 사용자 선택 심판 모델 (기본값: GPT-4o - 빠른 속도 + 우수한 성능)
+                judge_model = request.data.get('judge_model', 'GPT-4o')
+                
+                # 사용자가 선택한 LLM 모델들 (프론트엔드에서 전달)
+                selected_models = request.data.get('selected_models', None)
+                
+                # FormData로 전달된 경우 JSON 파싱
+                if isinstance(selected_models, str):
+                    try:
+                        import json
+                        selected_models = json.loads(selected_models)
+                        print(f"📋 JSON 파싱된 selected_models: {selected_models}")
+                    except Exception as e:
+                        print(f"⚠️ selected_models JSON 파싱 실패: {e}")
+                        selected_models = None
+                
+                # selected_models가 빈 리스트인 경우 처리
+                if selected_models is not None and len(selected_models) == 0:
+                    print(f"⚠️ selected_models가 빈 리스트입니다. 기본 모델 사용")
+                    selected_models = None
+                
+                print(f"🎯 사용자 선택 모델들: {selected_models}")
+                print(f"🎯 심판 모델: {judge_model}")
+                print(f"📝 처리할 메시지 길이: {len(final_message)}자")
+                
+                # 1-4단계: 선택된 LLM 병렬 질의 → 심판 모델 검증 → 최적 답변 생성
+                response = None
+                try:
+                    print(f"🚀 최적 답변 생성 시작...")
+                    print(f"📝 사용자 메시지: {final_message[:200]}...")
+                    print(f"🎯 선택된 모델: {selected_models}")
+                    print(f"⚖️ 심판 모델: {judge_model}")
+                    
+                    # 질문 유형 감지
+                    has_image = uploaded_file and not uploaded_file.name.lower().endswith('.pdf')
+                    has_document = uploaded_file and uploaded_file.name.lower().endswith('.pdf')
+                    
+                    question_type = None
+                    if has_image:
+                        question_type = 'image'
+                    elif has_document:
+                        question_type = 'document'
+                    else:
+                        question_type = detect_question_type_from_content(final_message)
+                    
+                    final_result = collect_multi_llm_responses(final_message, judge_model, selected_models, question_type=question_type)
+                    print(f"✅ 최적 답변 생성 완료: {type(final_result)}")
+                    print(f"✅ 최적 답변 결과 키: {list(final_result.keys()) if isinstance(final_result, dict) else 'N/A'}")
+                    
+                    # 최적 답변 내용 확인
+                    optimal_answer = final_result.get("최적의_답변", "")
+                    if not optimal_answer:
+                        # optimal_answer가 없으면 다른 키 확인
+                        optimal_answer = final_result.get("optimal_answer", "")
+                    print(f"📄 최적 답변 내용 길이: {len(optimal_answer) if optimal_answer else 0}자")
+                    print(f"📄 최적 답변 미리보기: {optimal_answer[:300] if optimal_answer else 'None'}...")
+                    
+                    # optimal_answer가 있으면 최적의_답변으로 변환
+                    if optimal_answer and not final_result.get("최적의_답변"):
+                        final_result["최적의_답변"] = optimal_answer
+                    
+                    # 결과 포맷팅
+                    response = format_optimal_response(final_result)
+                    print(f"✅ 결과 포맷팅 완료: {len(response) if response else 0}자")
+                    print(f"✅ 포맷팅된 응답 미리보기: {response[:500] if response else 'None'}...")
+                    
+                    # 대화 맥락에 추가
+                    session_id = request.data.get('user_id', 'default_user')
+                    conversation_context_manager.add_conversation(
+                        session_id=session_id,
+                        user_message=final_message,
+                        ai_responses=final_result.get('llm_검증_결과', {}),
+                        optimal_response=final_result.get('최적의_답변', '')
+                    )
+                    
+                    # response가 None이면 오류 메시지 반환
+                    if not response:
+                        print(f"❌ response가 None입니다!")
+                        response = "최적 답변 생성에 실패했습니다. 서버 로그를 확인해주세요."
+                    
+                    print(f"📤 최종 응답 반환 (길이: {len(response) if response else 0}자)")
+                    print(f"📤 최종 응답 미리보기: {response[:500] if response else 'None'}...")
+                    
+                    # 프론트엔드에서 분석 데이터를 쉽게 사용할 수 있도록 JSON 데이터도 함께 전송
+                    return Response({
+                        'response': response,
+                        'analysisData': final_result.get('llm_검증_결과', {}),
+                        'rationale': final_result.get('분석_근거', '')
+                    })
+                    
+                except Exception as e:
+                    import traceback
+                    error_trace = traceback.format_exc()
+                    print(f"❌ 최적 답변 생성 실패: {e}")
+                    print(f"❌ 상세 오류:\n{error_trace}")
+                    # 폴백: 사용자 친화적인 오류 메시지 반환
+                    friendly_error = get_user_friendly_error_message(e)
+                    return Response({'response': friendly_error})
+            
+            # optimal 모델이 아닌 경우
+            # 비용 절약: 파일 분석 시 간소화된 프롬프트 사용
+            has_image = uploaded_file and not uploaded_file.name.lower().endswith('.pdf')
+            has_document = uploaded_file and uploaded_file.name.lower().endswith('.pdf')
+            
+            # 질문 유형 자동 감지
+            question_type = None
+            if has_image:
+                question_type = 'image'
+            elif has_document:
+                question_type = 'document'
+            else:
+                question_type = detect_question_type_from_content(final_message)
+            
+            if uploaded_file and '파일 내용을 분석해' in final_message:
+                # 이미 Ollama로 분석된 내용이므로 간단한 응답 요청
+                simplified_message = f"다음 분석 내용에 대해 간단한 의견을 제시해주세요:\n\n{final_message.split('다음 파일 내용을 분석해주세요:')[1] if '다음 파일 내용을 분석해주세요:' in final_message else final_message}"
+                response = chatbot.chat(simplified_message, has_image=has_image, question_type=question_type)
+            else:
+                response = chatbot.chat(final_message, has_image=has_image, question_type=question_type)
+            
+            return Response({'response': response})
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            # 사용자 친화적인 오류 메시지 반환
+            friendly_error = get_user_friendly_error_message(e)
+            return Response({'error': friendly_error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+def generate_unique_username(email, name=None):
+    """이메일 기반으로 고유한 사용자명 생성"""
+    base_username = email.split('@')[0]
+    username = base_username
+    counter = 1
+    
+    while User.objects.filter(username=username).exists():
+        username = f"{base_username}_{counter}"
+        counter += 1
+    
+    return username
+
+@api_view(['GET'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([AllowAny])
+def google_callback(request):
+    try:
+        # 액세스 토큰 추출
+        auth_header = request.headers.get('Authorization', '')
+        if not auth_header.startswith('Bearer '):
+            return Response(
+                {'error': '잘못된 인증 헤더'}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        access_token = auth_header.split(' ')[1]
+
+        # Google API로 사용자 정보 요청
+        user_info_response = requests.get(
+            'https://www.googleapis.com/oauth2/v3/userinfo',
+            headers={'Authorization': f'Bearer {access_token}'}
+        )
+
+        if user_info_response.status_code != 200:
+            return Response(
+                {'error': 'Google에서 사용자 정보를 가져오는데 실패했습니다'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user_info = user_info_response.json()
+        email = user_info.get('email')
+        name = user_info.get('name')
+        
+        if not email:
+            return Response(
+                {'error': '이메일이 제공되지 않았습니다'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # 기존 사용자 검색
+            user = User.objects.get(email=email)
+            # 기존 사용자의 이름이 없으면 업데이트
+            if name and (not user.first_name and not user.last_name):
+                if ' ' in name:
+                    first_name, last_name = name.split(' ', 1)
+                    user.first_name = first_name
+                    user.last_name = last_name
+                else:
+                    user.first_name = name
+                user.save()
+        except User.DoesNotExist:
+            # 새로운 사용자 생성
+            username = generate_unique_username(email, name)
+            user = User.objects.create(
+                username=username,
+                email=email,
+                is_active=True
+            )
+            
+            # 이름 설정
+            if name:
+                if ' ' in name:
+                    first_name, last_name = name.split(' ', 1)
+                    user.first_name = first_name
+                    user.last_name = last_name
+                else:
+                    user.first_name = name
+            
+            # 기본 비밀번호 설정 (선택적)
+            random_password = uuid.uuid4().hex
+            user.set_password(random_password)
+            user.save()
+
+        # 소셜 계정 정보 생성 또는 업데이트
+        social_account, created = SocialAccount.objects.get_or_create(
+            email=email,
+            provider='google',
+            defaults={'user': user}
+        )
+
+        if not created and social_account.user != user:
+            social_account.user = user
+            social_account.save()
+
+        # 사용자 정보 직렬화
+        serializer = UserSerializer(user)
+        
+        return Response({
+            'message': '구글 로그인 성공',
+            'user': serializer.data
+        })
+        
+    except Exception as e:
+        return Response(
+            {'error': str(e)}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([AllowAny])
+def kakao_callback(request):
+    """카카오 로그인 콜백"""
+    try:
+        data = request.data
+        access_token = data.get('access_token')
+        
+        if not access_token:
+            return Response(
+                {'error': '액세스 토큰이 제공되지 않았습니다'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # 카카오 API로 사용자 정보 가져오기
+        user_info_response = requests.get(
+            'https://kapi.kakao.com/v2/user/me',
+            headers={'Authorization': f'Bearer {access_token}'}
+        )
+        
+        if user_info_response.status_code != 200:
+            return Response(
+                {'error': '카카오에서 사용자 정보를 가져오는데 실패했습니다'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        user_info = user_info_response.json()
+        kakao_account = user_info.get('kakao_account', {})
+        profile = kakao_account.get('profile', {})
+        
+        email = kakao_account.get('email')
+        name = profile.get('nickname')
+        
+        if not email:
+            return Response(
+                {'error': '이메일이 제공되지 않았습니다'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # 기존 사용자 검색
+            user = User.objects.get(email=email)
+            # 기존 사용자의 이름이 없으면 업데이트
+            if name and (not user.first_name and not user.last_name):
+                user.first_name = name
+                user.save()
+        except User.DoesNotExist:
+            # 새로운 사용자 생성
+            username = generate_unique_username(email, name)
+            user = User.objects.create(
+                username=username,
+                email=email,
+                is_active=True
+            )
+            
+            # 이름 설정
+            if name:
+                user.first_name = name
+            
+            # 기본 비밀번호 설정 (선택적)
+            random_password = uuid.uuid4().hex
+            user.set_password(random_password)
+            user.save()
+        
+        # 소셜 계정 정보 생성 또는 업데이트
+        social_account, created = SocialAccount.objects.get_or_create(
+            email=email,
+            provider='kakao',
+            defaults={'user': user}
+        )
+        
+        if not created and social_account.user != user:
+            social_account.user = user
+            social_account.save()
+        
+        serializer = UserSerializer(user)
+        return Response({
+            'message': '카카오 로그인 성공',
+            'user': serializer.data
+        })
+        
+    except Exception as e:
+        return Response(
+            {'error': str(e)}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([AllowAny])
+def naver_callback(request):
+    """네이버 로그인 콜백"""
+    try:
+        data = request.data
+        access_token = data.get('access_token')
+        code = data.get('code')
+        state = data.get('state')
+        client_id_override = data.get('client_id')
+        client_secret_override = data.get('client_secret')
+        redirect_uri_override = data.get('redirect_uri')
+        
+        if not access_token:
+            if not code:
+                return Response(
+                    {'error': 'access_token 또는 code가 제공되지 않았습니다'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            client_id = client_id_override or os.getenv('NAVER_CLIENT_ID') or getattr(settings, 'NAVER_CLIENT_ID', '')
+            client_secret = client_secret_override or os.getenv('NAVER_CLIENT_SECRET') or getattr(settings, 'NAVER_CLIENT_SECRET', '')
+            redirect_uri = redirect_uri_override or os.getenv('NAVER_REDIRECT_URI') or getattr(settings, 'NAVER_REDIRECT_URI', '')
+            
+            if not client_id or not client_secret:
+                return Response(
+                    {'error': '네이버 클라이언트 설정이 누락되었습니다'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            token_response = requests.post(
+                'https://nid.naver.com/oauth2.0/token',
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                data={
+                    'grant_type': 'authorization_code',
+                    'client_id': client_id,
+                    'client_secret': client_secret,
+                    'redirect_uri': redirect_uri,
+                    'code': code,
+                    'state': state or '',
+                }
+            )
+            
+            token_data = token_response.json()
+            if token_response.status_code != 200 or not token_data.get('access_token'):
+                return Response(
+                    {
+                        'error': '네이버 토큰 교환 실패',
+                        'detail': token_data
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            access_token = token_data.get('access_token')
+        
+        if not access_token:
+            return Response(
+                {'error': '액세스 토큰이 제공되지 않았습니다'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # 네이버 API로 사용자 정보 가져오기
+        user_info_response = requests.get(
+            'https://openapi.naver.com/v1/nid/me',
+            headers={'Authorization': f'Bearer {access_token}'}
+        )
+        
+        if user_info_response.status_code != 200:
+            return Response(
+                {'error': '네이버에서 사용자 정보를 가져오는데 실패했습니다'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        user_info = user_info_response.json()
+        response_data = user_info.get('response', {})
+        
+        email = response_data.get('email')
+        name = response_data.get('name')
+        nickname = response_data.get('nickname')
+        
+        if not email:
+            return Response(
+                {'error': '이메일이 제공되지 않았습니다'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # 이름이 없으면 닉네임 사용
+        display_name = name or nickname
+        
+        try:
+            # 기존 사용자 검색
+            user = User.objects.get(email=email)
+            # 기존 사용자의 이름이 없으면 업데이트
+            if display_name and (not user.first_name and not user.last_name):
+                user.first_name = display_name
+                user.save()
+        except User.DoesNotExist:
+            # 새로운 사용자 생성
+            username = generate_unique_username(email, display_name)
+            user = User.objects.create(
+                username=username,
+                email=email,
+                is_active=True
+            )
+            
+            # 이름 설정
+            if display_name:
+                user.first_name = display_name
+            
+            # 기본 비밀번호 설정 (선택적)
+            random_password = uuid.uuid4().hex
+            user.set_password(random_password)
+            user.save()
+        
+        # 소셜 계정 정보 생성 또는 업데이트
+        social_account, created = SocialAccount.objects.get_or_create(
+            email=email,
+            provider='naver',
+            defaults={'user': user}
+        )
+        
+        if not created and social_account.user != user:
+            social_account.user = user
+            social_account.save()
+        
+        serializer = UserSerializer(user)
+        return Response({
+            'message': '네이버 로그인 성공',
+            'user': serializer.data
+        })
+        
+    except Exception as e:
+        return Response(
+            {'error': str(e)}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+class VideoUploadView(APIView):
+    """영상 업로드 뷰 - 독립적인 영상 처리"""
+    permission_classes = [AllowAny]  # 임시로 AllowAny로 변경
+    parser_classes = (MultiPartParser, FormParser)
+    
+    def post(self, request):
+        try:
+            import os
+            import uuid
+            import time
+            from django.core.files.storage import default_storage
+            from django.conf import settings
+            
+            # 업로드된 파일 확인 (backend_videochat 방식)
+            if 'video' not in request.FILES:
+                return Response({
+                    'error': '비디오 파일이 없습니다'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            video_file = request.FILES['video']
+            
+            # 파일 확장자 검증 (backend_videochat 방식)
+            if not video_file.name.lower().endswith(('.mp4', '.avi', '.mov', '.mkv', '.webm')):
+                return Response({
+                    'error': '지원하지 않는 파일 형식입니다. MP4, AVI, MOV, MKV, WEBM 형식만 지원됩니다.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # 파일 크기 검증 (50MB 제한)
+            max_size = 50 * 1024 * 1024  # 50MB
+            if video_file.size > max_size:
+                return Response({
+                    'error': f'파일 크기가 너무 큽니다. 최대 50MB까지 업로드 가능합니다. (현재: {video_file.size / (1024*1024):.1f}MB)'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # 파일명 길이 검증
+            if len(video_file.name) > 200:
+                return Response({
+                    'error': '파일명이 너무 깁니다. 200자 이하로 제한됩니다.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # 고유한 파일명 생성 (backend_videochat 방식)
+            timestamp = int(time.time())
+            filename = f"upload_{timestamp}_{video_file.name}"
+            
+            # 파일 저장 (backend_videochat 방식)
+            from django.core.files.base import ContentFile
+            file_path = default_storage.save(
+                f'uploads/{filename}',
+                ContentFile(video_file.read())
+            )
+            full_path = os.path.join(settings.MEDIA_ROOT, file_path)
+            
+            # 파일 저장 검증
+            if not os.path.exists(full_path):
+                return Response({
+                    'error': '파일 저장에 실패했습니다. 다시 시도해주세요.'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            # 파일 크기 재검증 (실제 저장된 파일)
+            actual_size = os.path.getsize(full_path)
+            if actual_size == 0:
+                return Response({
+                    'error': '빈 파일이 업로드되었습니다. 유효한 영상 파일을 선택해주세요.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Create Video model instance (backend_videochat 방식)
+            video = Video.objects.create(
+                filename=filename,
+                original_name=video_file.name,
+                file_path=file_path,
+                file_size=video_file.size,
+                file=file_path,  # file 필드도 저장
+                analysis_status='pending'
+            )
+            
+            # 백그라운드에서 영상 분석 시작
+            def analyze_video_background():
+                try:
+                    print(f"🎬 백그라운드 영상 분석 시작: {video.id}")
+                    
+                    # 파일 존재 여부 재확인
+                    if not os.path.exists(full_path):
+                        print(f"❌ 영상 파일이 존재하지 않음: {full_path}")
+                        video.analysis_status = 'failed'
+                        video.analysis_message = '영상 파일을 찾을 수 없습니다.'
+                        video.save()
+                        return
+                    
+                    analysis_result = video_analysis_service.analyze_video(file_path, video.id)
+                    if analysis_result and analysis_result is not True:
+                        # 분석 결과가 딕셔너리인 경우 (오류 정보 포함)
+                        if isinstance(analysis_result, dict) and not analysis_result.get('success', True):
+                            print(f"❌ 영상 분석 실패: {video.id} - {analysis_result.get('error_message', 'Unknown error')}")
+                            video.analysis_status = 'failed'
+                            video.analysis_message = analysis_result.get('error_message', '분석 중 오류가 발생했습니다.')
+                        else:
+                            print(f"✅ 영상 분석 완료: {video.id}")
+                            video.analysis_status = 'completed'
+                            video.is_analyzed = True
+                    else:
+                        print(f"❌ 영상 분석 실패: {video.id}")
+                        video.analysis_status = 'failed'
+                        video.analysis_message = '분석 중 오류가 발생했습니다.'
+                    
+                    video.save()
+                except Exception as e:
+                    print(f"❌ 백그라운드 분석 오류: {e}")
+                    video.analysis_status = 'failed'
+                    video.analysis_message = f'분석 중 오류가 발생했습니다: {str(e)}'
+                    video.save()
+            
+            # 별도 스레드에서 분석 실행
+            analysis_thread = threading.Thread(target=analyze_video_background)
+            analysis_thread.daemon = True
+            analysis_thread.start()
+            
+            return Response({
+                'success': True,
+                'video_id': video.id,
+                'filename': filename,
+                'message': f'비디오 "{video_file.name}"이 성공적으로 업로드되었습니다.'
+            })
+                
+        except Exception as e:
+            return Response({
+                'error': f'영상 업로드 중 오류 발생: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class VideoListView(APIView):
+    """비디오 목록 조회 - backend_videochat 방식"""
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        try:
+            videos = Video.objects.all()
+            video_list = []
+            
+            for video in videos:
+                # 상태 동기화 수행 (파일과 DB 상태 일치 확인)
+                video_analysis_service.sync_video_status_with_files(video.id)
+                
+                # 동기화 후 최신 상태로 다시 가져오기
+                video.refresh_from_db()
+                
+                # 분석 상태 결정 (더 정확한 판단)
+                actual_analysis_status = video.analysis_status
+                if video.analysis_status == 'completed' and not video.analysis_json_path:
+                    actual_analysis_status = 'failed'
+                    print(f"⚠️ 영상 {video.id}: analysis_status는 completed이지만 analysis_json_path가 없음")
+                
+                video_data = {
+                    'id': video.id,
+                    'filename': video.filename,
+                    'original_name': video.original_name,
+                    'duration': video.duration,
+                    'is_analyzed': video.is_analyzed,
+                    'analysis_status': actual_analysis_status,  # 실제 상태 사용
+                    'uploaded_at': video.uploaded_at,
+                    'file_size': video.file_size,
+                    'analysis_progress': video.analysis_progress,  # 진행률 정보 추가
+                    'analysis_message': video.analysis_message or ''  # 분석 메시지 추가
+                }
+                video_list.append(video_data)
+            
+            return Response({
+                'videos': video_list,
+                'count': len(video_list)
+            })
+            
+        except Exception as e:
+            return Response({
+                'error': f'비디오 목록 조회 중 오류 발생: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class VideoDeleteView(APIView):
+    """영상 삭제 API"""
+    permission_classes = [AllowAny]
+    
+    def delete(self, request, video_id):
+        try:
+            video = Video.objects.get(id=video_id)
+            
+            # 파일 삭제
+            if video.file and os.path.exists(video.file.path):
+                try:
+                    os.remove(video.file.path)
+                    logger.info(f"✅ 영상 파일 삭제: {video.file.path}")
+                except Exception as e:
+                    logger.warning(f"영상 파일 삭제 실패: {e}")
+            
+            # 분석 결과 파일 삭제
+            if video.analysis_json_path:
+                json_path = os.path.join(settings.MEDIA_ROOT, video.analysis_json_path)
+                if os.path.exists(json_path):
+                    try:
+                        os.remove(json_path)
+                        logger.info(f"✅ 분석 결과 파일 삭제: {json_path}")
+                    except Exception as e:
+                        logger.warning(f"분석 결과 파일 삭제 실패: {e}")
+            
+            # 프레임 이미지 파일 삭제
+            if video.frame_images_path:
+                frame_paths = video.frame_images_path.split(',')
+                for path in frame_paths:
+                    full_path = os.path.join(settings.MEDIA_ROOT, path.strip())
+                    if os.path.exists(full_path):
+                        try:
+                            os.remove(full_path)
+                        except Exception as e:
+                            logger.warning(f"프레임 이미지 삭제 실패: {e}")
+            
+            # DB에서 삭제
+            video_name = video.original_name
+            video.delete()
+            
+            logger.info(f"✅ 영상 삭제 완료: {video_name} (ID: {video_id})")
+            
+            return Response({
+                'message': f'영상 "{video_name}"이(가) 삭제되었습니다.',
+                'video_id': video_id
+            })
+            
+        except Video.DoesNotExist:
+            return Response({
+                'error': '영상을 찾을 수 없습니다.'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"❌ 영상 삭제 오류: {e}")
+            return Response({
+                'error': f'영상 삭제 중 오류 발생: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class VideoRenameView(APIView):
+    """영상 이름 변경 API"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request, video_id):
+        try:
+            video = Video.objects.get(id=video_id)
+            new_name = request.data.get('original_name', '').strip()
+            
+            if not new_name:
+                return Response({
+                    'error': '새 이름을 입력해주세요.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            old_name = video.original_name
+            video.original_name = new_name
+            video.save()
+            
+            logger.info(f"✅ 영상 이름 변경: {old_name} → {new_name} (ID: {video_id})")
+            
+            return Response({
+                'message': f'영상 이름이 "{new_name}"(으)로 변경되었습니다.',
+                'video_id': video_id,
+                'new_name': new_name
+            })
+            
+        except Video.DoesNotExist:
+            return Response({
+                'error': '영상을 찾을 수 없습니다.'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"❌ 영상 이름 변경 오류: {e}")
+            return Response({
+                'error': f'영상 이름 변경 중 오류 발생: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class VideoAnalysisView(APIView):
+    """영상 분석 상태 확인 및 시작 - backend_videochat 방식"""
+    permission_classes = [AllowAny]
+    
+    def get(self, request, video_id):
+        try:
+            video = Video.objects.get(id=video_id)
+            
+            # 상태 동기화 수행 (파일과 DB 상태 일치 확인)
+            video_analysis_service.sync_video_status_with_files(video_id)
+            
+            # 동기화 후 최신 상태로 다시 가져오기
+            video.refresh_from_db()
+            
+            # 진행률 정보 추출
+            progress_info = {
+                'analysis_progress': video.analysis_progress,
+                'analysis_message': video.analysis_message or ''
+            }
+            
+            # 분석 상태 결정 (더 정확한 판단)
+            actual_analysis_status = video.analysis_status
+            if video.analysis_status == 'completed' and not video.analysis_json_path:
+                actual_analysis_status = 'failed'
+                print(f"⚠️ 영상 {video_id}: analysis_status는 completed이지만 analysis_json_path가 없음")
+            
+            return Response({
+                'video_id': video.id,
+                'filename': video.filename,
+                'original_name': video.original_name,
+                'analysis_status': actual_analysis_status,  # 실제 상태 사용
+                'is_analyzed': video.is_analyzed,
+                'duration': video.duration,
+                'progress': progress_info,  # 프론트엔드가 기대하는 구조로 변경
+                'uploaded_at': video.uploaded_at,
+                'file_size': video.file_size,
+                'analysis_json_path': video.analysis_json_path,
+                'frame_images_path': video.frame_images_path
+            })
+        except Video.DoesNotExist:
+            return Response({
+                'error': '영상을 찾을 수 없습니다'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                'error': f'영상 분석 조회 중 오류 발생: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def post(self, request, video_id):
+        """영상 분석 시작"""
+        try:
+            video = Video.objects.get(id=video_id)
+            
+            # 이미 분석 중이거나 완료된 경우
+            if video.analysis_status == 'pending':
+                return Response({
+                    'message': '이미 분석이 진행 중입니다.',
+                    'status': 'pending'
+                })
+            elif video.analysis_status == 'completed':
+                return Response({
+                    'message': '이미 분석이 완료되었습니다.',
+                    'status': 'completed'
+                })
+            
+            # 분석 상태를 pending으로 변경
+            video.analysis_status = 'pending'
+            video.save()
+            
+            # 백그라운드에서 영상 분석 시작
+            def analyze_video_background():
+                try:
+                    print(f"🎬 백그라운드 영상 분석 시작: {video.id}")
+                    analysis_result = video_analysis_service.analyze_video(video.file_path, video.id)
+                    if analysis_result:
+                        print(f"✅ 영상 분석 완료: {video.id}")
+                        # Video 모델 업데이트
+                        video.analysis_status = 'completed'
+                        video.is_analyzed = True
+                        video.save()
+                    else:
+                        print(f"❌ 영상 분석 실패: {video.id}")
+                        video.analysis_status = 'failed'
+                        video.save()
+                except Exception as e:
+                    print(f"❌ 백그라운드 분석 오류: {e}")
+                    video.analysis_status = 'failed'
+                    video.save()
+            
+            # 별도 스레드에서 분석 실행
+            analysis_thread = threading.Thread(target=analyze_video_background)
+            analysis_thread.daemon = True
+            analysis_thread.start()
+            
+            return Response({
+                'message': '영상 분석을 시작했습니다.',
+                'status': 'pending'
+            })
+            
+        except Video.DoesNotExist:
+            return Response({
+                'error': '영상을 찾을 수 없습니다'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                'error': f'영상 분석 시작 중 오류 발생: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class VideoChatView(APIView):
+    """영상 채팅 뷰 - 다중 AI 응답 및 통합"""
+    permission_classes = [AllowAny]  # 임시로 AllowAny로 변경
+    
+    def get(self, request, video_id=None):
+        """채팅 세션 목록 조회"""
+        try:
+            print(f"🔍 VideoChatView GET 요청 - video_id: {video_id}")
+            
+            # 사용자 정보 처리 (인증되지 않은 경우 기본 사용자 사용)
+            user = None
+            if hasattr(request, 'user') and request.user.is_authenticated:
+                user = request.user
+            else:
+                # 기본 사용자 생성 또는 가져오기
+                from chat.models import User
+                user, created = User.objects.get_or_create(
+                    username='anonymous',
+                    defaults={'email': 'anonymous@example.com'}
+                )
+                print(f"✅ 기본 사용자 생성/가져오기: {user.username}")
+            
+            if video_id:
+                # 특정 영상의 채팅 세션 조회
+                sessions = VideoChatSession.objects.filter(
+                    user=user, 
+                    video_id=video_id,
+                    is_active=True
+                ).order_by('-created_at')
+            else:
+                # 사용자의 모든 채팅 세션 조회
+                sessions = VideoChatSession.objects.filter(
+                    user=user,
+                    is_active=True
+                ).order_by('-created_at')
+            
+            serializer = VideoChatSessionSerializer(sessions, many=True)
+            return Response({
+                'sessions': serializer.data,
+                'total_count': sessions.count()
+            })
+            
+        except Exception as e:
+            return Response({
+                'error': f'채팅 세션 조회 중 오류 발생: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def post(self, request, video_id):
+        """영상 채팅 메시지 전송"""
+        try:
+            print(f"🔍 VideoChatView POST 요청 - video_id: {video_id}")
+            # Django WSGIRequest에서 JSON 데이터 파싱
+            import json
+            if hasattr(request, 'data'):
+                message = request.data.get('message')
+            else:
+                body = request.body.decode('utf-8')
+                data = json.loads(body)
+                message = data.get('message')
+            print(f"📝 메시지: {message}")
+            
+            if not message:
+                return Response({
+                    'error': '메시지가 필요합니다'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # 영상 분석 상태 확인 (Video 모델에서 직접 확인)
+            try:
+                video = Video.objects.get(id=video_id)
+                if video.analysis_status == 'pending':
+                    return Response({
+                        'error': '영상 분석이 진행 중입니다. 잠시 후 다시 시도해주세요.',
+                        'status': 'analyzing'
+                    }, status=status.HTTP_202_ACCEPTED)
+                elif video.analysis_status == 'failed':
+                    return Response({
+                        'error': '영상 분석에 실패했습니다. 다른 영상을 업로드해주세요.',
+                        'status': 'failed'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            except Video.DoesNotExist:
+                return Response({
+                    'error': '영상을 찾을 수 없습니다'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # 사용자 정보 처리 (인증되지 않은 경우 기본 사용자 사용)
+            user = request.user if request.user.is_authenticated else None
+            if not user:
+                # 기본 사용자 생성 또는 가져오기
+                from chat.models import User
+                user, created = User.objects.get_or_create(
+                    username='anonymous',
+                    defaults={'email': 'anonymous@example.com'}
+                )
+            
+            # 채팅 세션 가져오기 또는 생성
+            session, created = VideoChatSession.objects.get_or_create(
+                user=user,
+                video_id=video_id,
+                is_active=True,
+                defaults={
+                    'video_title': f"Video {video_id}",
+                    'video_analysis_data': {}
+                }
+            )
+            
+            # 사용자 메시지 저장
+            user_message = VideoChatMessage.objects.create(
+                session=session,
+                message_type='user',
+                content=message
+            )
+            
+            # 🎯 개선된 핸들러 사용
+            print(f"🔍 개선된 영상 채팅 핸들러 사용: '{message}'")
+            handler = get_video_chat_handler(video_id, video)
+            chat_result = handler.process_message(message)
+            
+            # AI 개별 응답 저장
+            individual_messages = []
+            if chat_result.get('individual_responses'):
+                for ai_name, ai_content in chat_result['individual_responses'].items():
+                    ai_message = VideoChatMessage.objects.create(
+                        session=session,
+                        message_type='ai',
+                        content=ai_content,
+                        ai_model=ai_name,
+                        parent_message=user_message
+                    )
+                    individual_messages.append(ai_message)
+            
+            # 통합 응답 저장
+            optimal_response = chat_result.get('answer', '')
+            optimal_message = None
+            if optimal_response:
+                optimal_message = VideoChatMessage.objects.create(
+                    session=session,
+                    message_type='ai_optimal',
+                    content=optimal_response,
+                    ai_model='optimal',
+                    parent_message=user_message
+                )
+            
+            # 프레임 정보 구성
+            relevant_frames = []
+            if chat_result.get('frames'):
+                # 메타 DB에서 전체 프레임 정보 가져오기 (영상별 동적 경로)
+                meta_db_filename = f"{video.original_name or video.filename}-meta_db.json"
+                meta_db_path = os.path.join(settings.MEDIA_ROOT, meta_db_filename)
+                all_frames = []
+                if os.path.exists(meta_db_path):
+                    try:
+                        with open(meta_db_path, 'r', encoding='utf-8') as f:
+                            meta_data = json.load(f)
+                            all_frames = meta_data.get('frame', [])
+                    except Exception as meta_error:
+                        logger.warning(f"메타 DB 로드 실패({meta_db_path}): {meta_error}")
+                else:
+                    logger.warning(f"메타 DB 파일이 존재하지 않습니다: {meta_db_path}")
+                
+                for idx, frame in enumerate(chat_result['frames']):
+                    meta_frame = None
+                    if all_frames:
+                        # timestamp 기준으로 메타 프레임 찾기
+                        for candidate in all_frames:
+                            if abs(candidate.get('timestamp', 0) - frame.get('timestamp', 0)) < 0.1:
+                                meta_frame = candidate
+                                break
+                    
+                    # 이미지 경로와 ID 결정
+                    image_id = frame.get('image_id')
+                    if not image_id and meta_frame:
+                        image_id = meta_frame.get('image_id')
+                    if not image_id:
+                        image_id = idx + 1
+                    
+                    frame_image_path = frame.get('frame_image_path')
+                    if not frame_image_path and meta_frame:
+                        frame_image_path = meta_frame.get('frame_image_path')
+                    if not frame_image_path:
+                        frame_image_path = f"images/video{video_id}_frame{image_id}.jpg"
+                    frame_image_path = frame_image_path.lstrip('/')
+                    
+                    raw_objects = frame.get('objects', []) or []
+                    persons = frame.get('persons')
+                    if persons is None:
+                        persons = [obj for obj in raw_objects if obj.get('class') == 'person']
+                    
+                    other_objects = frame.get('detected_other_objects')
+                    if other_objects is None:
+                        other_objects = [obj for obj in raw_objects if obj.get('class') != 'person']
+                    
+                    frame_info = {
+                        'image_id': image_id,
+                        'timestamp': frame.get('timestamp', 0),
+                        'image_url': f"/media/{frame_image_path}",
+                        'caption': frame.get('caption', ''),
+                        'relevance_score': frame.get('match_score', 1.0),
+                        'persons': persons[:3] if persons else [],
+                        'objects': other_objects,
+                        'scene_attributes': {
+                            'scene_type': 'unknown',
+                            'lighting': 'unknown',
+                            'activity_level': 'unknown'
+                        }
+                    }
+                    relevant_frames.append(frame_info)
+            
+            # 응답 데이터 구성 (프론트엔드 형식에 맞춤)
+            response_data = {
+                'session_id': str(session.id),
+                'user_message': {
+                    'id': str(user_message.id),
+                    'content': message,
+                    'created_at': user_message.created_at.isoformat()
+                },
+                'ai_responses': {
+                    'individual': [
+                        {
+                            'id': str(msg.id),
+                            'model': msg.ai_model,
+                            'content': msg.content,
+                            'created_at': msg.created_at.isoformat()
+                        } for msg in individual_messages
+                    ],
+                    'optimal': {
+                        'id': str(optimal_message.id) if optimal_message else None,
+                        'model': 'optimal',
+                        'content': optimal_response,
+                        'created_at': optimal_message.created_at.isoformat() if optimal_message else None
+                    } if optimal_response else None
+                },
+                'relevant_frames': relevant_frames,
+                'is_video_related': chat_result.get('is_video_related', True)
+            }
+            
+            print(f"✅ 응답 생성 완료:")
+            print(f"   - 개별 AI: {len(individual_messages)}개")
+            print(f"   - 통합 응답: {'있음' if optimal_response else '없음'}")
+            print(f"   - 관련 프레임: {len(relevant_frames)}개")
+            
+            return Response(response_data)
+            
+        except Exception as e:
+            import traceback
+            print(f"❌ 오류 발생: {e}")
+            print(f"❌ 상세: {traceback.format_exc()}")
+            return Response({
+                'error': f'채팅 처리 중 오류 발생: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            # 영상 분석 데이터 가져오기 (Video 모델에서 직접)
+            analysis_data = {
+                'original_name': video.original_name,
+                'file_size': video.file_size,
+                'uploaded_at': video.uploaded_at.isoformat(),
+                'analysis_status': video.analysis_status,
+                'duration': video.duration,
+                'is_analyzed': video.is_analyzed
+            }
+            
+            # JSON 분석 결과 로드 (기존 + TeletoVision_AI 스타일)
+            analysis_json_data = None
+            teleto_vision_data = {}
+            
+            # 1. 기존 분석 JSON 로드
+            if video.analysis_json_path:
+                try:
+                    json_path = os.path.join(settings.MEDIA_ROOT, video.analysis_json_path)
+                    print(f"🔍 기존 JSON 파일 경로: {json_path}")
+                    print(f"🔍 파일 존재 여부: {os.path.exists(json_path)}")
+                    
+                    with open(json_path, 'r', encoding='utf-8') as f:
+                        analysis_json_data = json.load(f)
+                    print(f"✅ 기존 JSON 분석 결과 로드 성공: {json_path}")
+                    print(f"📊 기존 JSON 데이터 키: {list(analysis_json_data.keys())}")
+                    if 'frame_results' in analysis_json_data:
+                        print(f"📊 frame_results 개수: {len(analysis_json_data['frame_results'])}")
+                        if analysis_json_data['frame_results']:
+                            print(f"📊 첫 번째 프레임: {analysis_json_data['frame_results'][0]}")
+                except Exception as e:
+                    print(f"❌ 기존 JSON 분석 결과 로드 실패: {e}")
+                    import traceback
+                    print(f"❌ 상세 오류: {traceback.format_exc()}")
+            else:
+                print("❌ analysis_json_path가 없습니다.")
+            
+            # 2. TeletoVision_AI 스타일 JSON 로드
+            try:
+                video_name = video.original_name or video.filename
+                detection_db_path = os.path.join(settings.MEDIA_ROOT, f"{video_name}-detection_db.json")
+                meta_db_path = os.path.join(settings.MEDIA_ROOT, f"{video_name}-meta_db.json")
+                
+                print(f"🔍 TeletoVision detection_db 경로: {detection_db_path}")
+                print(f"🔍 TeletoVision meta_db 경로: {meta_db_path}")
+                
+                # detection_db.json 로드
+                if os.path.exists(detection_db_path):
+                    with open(detection_db_path, 'r', encoding='utf-8') as f:
+                        teleto_vision_data['detection_db'] = json.load(f)
+                    print(f"✅ TeletoVision detection_db 로드 성공: {len(teleto_vision_data['detection_db'])}개 프레임")
+                else:
+                    print(f"❌ TeletoVision detection_db 파일 없음: {detection_db_path}")
+                
+                # meta_db.json 로드
+                if os.path.exists(meta_db_path):
+                    with open(meta_db_path, 'r', encoding='utf-8') as f:
+                        teleto_vision_data['meta_db'] = json.load(f)
+                    print(f"✅ TeletoVision meta_db 로드 성공: {len(teleto_vision_data['meta_db'].get('frame', []))}개 프레임")
+                    if teleto_vision_data['meta_db'].get('frame'):
+                        first_frame = teleto_vision_data['meta_db']['frame'][0]
+                        print(f"📊 첫 번째 meta 프레임 키: {list(first_frame.keys())}")
+                else:
+                    print(f"❌ TeletoVision meta_db 파일 없음: {meta_db_path}")
+                    
+            except Exception as e:
+                print(f"❌ TeletoVision JSON 로드 실패: {e}")
+                import traceback
+                print(f"❌ 상세 오류: {traceback.format_exc()}")
+                teleto_vision_data = {}
+                print(f"❌ video.analysis_json_path: {video.analysis_json_path}")
+            
+            # 프레임 검색 및 이미지 URL 생성
+            print(f"🔍 프레임 검색 시작 - analysis_json_data: {analysis_json_data is not None}")
+            if analysis_json_data:
+                print(f"📊 frame_results 존재: {'frame_results' in analysis_json_data}")
+                if 'frame_results' in analysis_json_data:
+                    print(f"📊 frame_results 개수: {len(analysis_json_data['frame_results'])}")
+            else:
+                print("❌ analysis_json_data가 None입니다!")
+                print(f"❌ video.analysis_json_path: {video.analysis_json_path}")
+                print(f"❌ video.analysis_status: {video.analysis_status}")
+                print(f"❌ video.is_analyzed: {video.is_analyzed}")
+            
+            # 대화 맥락 가져오기
+            session_id = f"video_{video_id}_user_{user.id}"
+            context_prompt = conversation_memory.generate_context_prompt(session_id, message)
+            
+            # 프레임 검색 (의도 기반)
+            relevant_frames = self._find_relevant_frames(message, analysis_json_data, video_id)
+            print(f"🔍 검색된 프레임 수: {len(relevant_frames)}")
+            if relevant_frames:
+                print(f"📸 첫 번째 프레임: {relevant_frames[0]}")
+                print(f"📸 모든 프레임 정보:")
+                for i, frame in enumerate(relevant_frames):
+                    print(f"  프레임 {i+1}: {frame}")
+            else:
+                print("❌ 검색된 프레임이 없습니다!")
+                print(f"❌ analysis_json_data keys: {list(analysis_json_data.keys()) if analysis_json_data else 'None'}")
+                if analysis_json_data and 'frame_results' in analysis_json_data:
+                    print(f"❌ frame_results 개수: {len(analysis_json_data['frame_results'])}")
+                    if analysis_json_data['frame_results']:
+                        print(f"❌ 첫 번째 frame_result: {analysis_json_data['frame_results'][0]}")
+            
+            # 다중 AI 응답 생성
+            ai_responses = {}
+            individual_messages = []
+            
+            # 기본 채팅 시스템과 동일한 AI 모델 초기화
+            try:
+                # 전역 chatbots 변수 사용 (이미 초기화되어 있음)
+                print(f"✅ 사용 가능한 AI 모델: {list(chatbots.keys())}")
+            except Exception as e:
+                print(f"⚠️ AI 모델 초기화 실패: {e}")
+                # 전역 chatbots 변수는 이미 초기화되어 있으므로 덮어쓰지 않음
+            
+            # AI 모델 확인
+            print(f"🤖 사용 가능한 AI 모델: {list(chatbots.keys()) if chatbots else 'None'}")
+            
+            # AI 모델이 없는 경우 기본 응답 (프레임 정보 포함)
+            if not chatbots:
+                print("⚠️ 사용 가능한 AI 모델이 없습니다. 기본 응답을 생성합니다.")
+                
+                # 프레임 정보를 포함한 더 나은 응답 생성
+                if relevant_frames:
+                    frame_count = len(relevant_frames)
+                    default_response = f"영상에서 '{message}'와 관련된 {frame_count}개의 프레임을 찾았습니다!\n\n"
+                    
+                    for i, frame in enumerate(relevant_frames, 1):
+                        default_response += f"📸 프레임 {i}:\n"
+                        default_response += f"   ⏰ 시간: {frame['timestamp']:.1f}초\n"
+                        default_response += f"   🎯 관련도: {frame['relevance_score']}점\n"
+                        
+                        if frame['persons'] and len(frame['persons']) > 0:
+                            default_response += f"   👤 사람 {len(frame['persons'])}명 감지\n"
+                        
+                        if frame['objects'] and len(frame['objects']) > 0:
+                            default_response += f"   📦 객체 {len(frame['objects'])}개 감지\n"
+                        
+                        scene_attrs = frame.get('scene_attributes', {})
+                        if scene_attrs:
+                            scene_type = scene_attrs.get('scene_type', 'unknown')
+                            lighting = scene_attrs.get('lighting', 'unknown')
+                            activity = scene_attrs.get('activity_level', 'unknown')
+                            default_response += f"   🏞️ 장면: {scene_type}, 조명: {lighting}, 활동: {activity}\n"
+                        
+                        default_response += "\n"
+                    
+                    default_response += "💡 AI 모델이 활성화되면 더 자세한 분석을 제공할 수 있습니다."
+                else:
+                    default_response = f"죄송합니다. '{message}'와 관련된 프레임을 찾을 수 없습니다.\n\n"
+                    default_response += "다른 키워드로 시도해보세요:\n"
+                    default_response += "• 사람, 자동차, 동물, 음식, 옷, 건물, 자연, 물체"
+                
+                ai_responses = {
+                    'default': default_response
+                }
+            else:
+                # 각 AI 모델에 질문 전송
+                for bot_name, chatbot in chatbots.items():
+                    if bot_name == 'optimal':
+                        continue  # optimal은 나중에 처리
+                    
+                    try:
+                        # 색상 검색 모드 확인
+                        is_color_search = any(keyword in message.lower() for keyword in ['빨간색', '파란색', '노란색', '초록색', '보라색', '분홍색', '검은색', '흰색', '회색', '주황색', '갈색', '옷'])
+                        
+                        # 간소화된 영상 정보 프롬프트 생성
+                        video_context = f"""
+영상: {analysis_data.get('original_name', 'Unknown')} ({analysis_data.get('file_size', 0) / (1024*1024):.1f}MB)
+분석: {len(analysis_json_data.get('frame_results', []))}개 프레임, {analysis_json_data.get('video_summary', {}).get('total_detections', 0)}개 객체
+품질: {analysis_json_data.get('video_summary', {}).get('quality_assessment', {}).get('overall_score', 0):.2f}
+"""
+                        
+                        # 간소화된 프레임 정보
+                        frame_context = ""
+                        if relevant_frames:
+                            frame_context = f"\n관련 프레임 {len(relevant_frames)}개:\n"
+                            for i, frame in enumerate(relevant_frames[:2], 1):  # 최대 2개만
+                                frame_context += f"프레임 {i}: {frame['timestamp']:.1f}초, 사람 {len(frame.get('persons', []))}명\n"
+                        else:
+                            frame_context = "\n관련 프레임 없음\n"
+                        
+                        enhanced_message = f"""{video_context}{frame_context}
+
+사용자 질문: "{message}"
+
+위 정보를 바탕으로 친근하게 답변해주세요."""
+                        
+                        # 간소화된 AI 프롬프트
+                        ai_prompt = enhanced_message
+                        
+                        # AI별 특성화된 프롬프트로 응답 생성
+                        ai_response = chatbot.chat(ai_prompt)
+                        ai_responses[bot_name] = ai_response
+                        
+                        # 개별 AI 응답 저장
+                        ai_message = VideoChatMessage.objects.create(
+                            session=session,
+                            message_type='ai',
+                            content=ai_response,
+                            ai_model=bot_name,
+                            parent_message=user_message
+                        )
+                        individual_messages.append(ai_message)
+                        
+                    except Exception as e:
+                        print(f"AI {bot_name} 응답 생성 실패: {str(e)}")
+                        continue
+            
+            # 통합 응답 생성 (기본 채팅 시스템과 동일한 방식)
+            optimal_response = ""
+            if ai_responses and len(ai_responses) > 1:
+                try:
+                    # 기본 채팅 시스템의 generate_optimal_response 사용
+                    optimal_response = generate_optimal_response(ai_responses, message, os.getenv('OPENAI_API_KEY'))
+                    
+                    # 프레임 정보 추가 (더 자세한 정보 포함)
+                    if relevant_frames:
+                        frame_summary = f"\n\n📸 관련 프레임 {len(relevant_frames)}개 발견:\n"
+                        for i, frame in enumerate(relevant_frames, 1):
+                            frame_summary += f"• 프레임 {i}: {frame['timestamp']:.1f}초 (관련도 {frame['relevance_score']:.2f}점)\n"
+                            
+                            # 프레임별 세부 정보 추가
+                            if frame.get('persons'):
+                                frame_summary += f"  👤 사람 {len(frame['persons'])}명 감지됨!\n"
+                                # 각 사람의 상세 정보 추가
+                                for j, person in enumerate(frame['persons'], 1):
+                                    confidence = person.get('confidence', 0)
+                                    frame_summary += f"    사람 {j}: 신뢰도 {confidence:.2f}\n"
+                                    # 속성 정보 추가
+                                    attrs = person.get('attributes', {})
+                                    if 'gender' in attrs:
+                                        gender_info = attrs['gender']
+                                        frame_summary += f"      성별: {gender_info.get('value', 'unknown')}\n"
+                                    if 'age' in attrs:
+                                        age_info = attrs['age']
+                                        frame_summary += f"      나이: {age_info.get('value', 'unknown')}\n"
+                            if frame.get('objects'):
+                                frame_summary += f"  📦 객체 {len(frame['objects'])}개 감지\n"
+                            
+                            scene_attrs = frame.get('scene_attributes', {})
+                            if scene_attrs:
+                                scene_type = scene_attrs.get('scene_type', 'unknown')
+                                lighting = scene_attrs.get('lighting', 'unknown')
+                                frame_summary += f"  🏞️ 장면: {scene_type}, 조명: {lighting}\n"
+                        
+                        frame_summary += "\n💡 위 프레임들을 참고하여 영상에서 해당 내용을 확인해보세요."
+                        optimal_response += frame_summary
+                    
+                    # 통합 응답 저장
+                    optimal_message = VideoChatMessage.objects.create(
+                        session=session,
+                        message_type='ai_optimal',
+                        content=optimal_response,
+                        ai_model='optimal',
+                        parent_message=user_message
+                    )
+                    
+                except Exception as e:
+                    print(f"통합 응답 생성 실패: {str(e)}")
+                    optimal_response = f"통합 응답 생성 중 오류가 발생했습니다: {str(e)}"
+            elif ai_responses and len(ai_responses) == 1:
+                # AI 응답이 하나만 있는 경우
+                optimal_response = list(ai_responses.values())[0]
+            
+            # 응답 품질 평가
+            evaluation_results = {}
+            if ai_responses and len(ai_responses) > 1:
+                try:
+                    evaluation_results = evaluation_metrics.evaluate_summary_quality(
+                        ai_responses, reference=optimal_response
+                    )
+                    print(f"✅ 응답 품질 평가 완료: {len(evaluation_results)}개 AI")
+                except Exception as e:
+                    print(f"❌ 응답 품질 평가 실패: {e}")
+            
+            # 대화 맥락 업데이트
+            try:
+                conversation_memory.add_context(
+                    session_id=session_id,
+                    user_message=message,
+                    ai_responses=ai_responses,
+                    video_context={
+                        'video_id': video_id,
+                        'video_name': video.original_name,
+                        'relevant_frames_count': len(relevant_frames)
+                    }
+                )
+                print(f"✅ 대화 맥락 업데이트 완료")
+            except Exception as e:
+                print(f"❌ 대화 맥락 업데이트 실패: {e}")
+            
+            # 응답 데이터 구성
+            response_data = {
+                'session_id': str(session.id),
+                'user_message': {
+                    'id': str(user_message.id),
+                    'content': message,
+                    'created_at': user_message.created_at
+                },
+                'ai_responses': {
+                    'individual': [
+                        {
+                            'id': str(msg.id),
+                            'model': msg.ai_model,
+                            'content': msg.content,
+                            'created_at': msg.created_at
+                        } for msg in individual_messages
+                    ],
+                    'optimal': {
+                        'content': optimal_response,
+                        'created_at': individual_messages[0].created_at if individual_messages else None
+                    } if optimal_response else None
+                },
+                'relevant_frames': relevant_frames,  # 관련 프레임 정보 추가
+                'evaluation_results': evaluation_results,  # 품질 평가 결과
+                'context_info': {
+                    'session_id': session_id,
+                    'context_length': len(conversation_memory.get_context(session_id).get('conversations', []))
+                }
+            }
+            
+            # 디버깅: relevant_frames 확인
+            print(f"🔍 응답 생성 시 relevant_frames: {len(relevant_frames)}")
+            if relevant_frames:
+                print(f"📸 첫 번째 프레임: {relevant_frames[0]}")
+            else:
+                print("❌ relevant_frames가 비어있음!")
+            
+            print(f"📤 응답에 포함될 프레임 수: {len(relevant_frames)}")
+            if relevant_frames:
+                print(f"📸 첫 번째 프레임: {relevant_frames[0]}")
+            
+            return Response(response_data)
+            
+        except Exception as e:
+            import traceback
+            print(f"❌ VideoChatView POST 오류: {str(e)}")
+            print(f"❌ 오류 상세: {traceback.format_exc()}")
+            return Response({
+                'error': f'채팅 처리 중 오류 발생: {str(e)}',
+                'traceback': traceback.format_exc()
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _classify_intent(self, message):
+        """사용자 메시지의 의도를 분류"""
+        try:
+            message_lower = message.lower()
+            
+            # 의도별 키워드 정의
+            intent_keywords = {
+                'video_summary': ['요약', 'summary', '간단', '상세', '하이라이트', 'highlight', '정리'],
+                'video_search': ['찾아', '검색', 'search', '보여', '어디', '언제', '누가'],
+                'person_search': ['사람', 'person', 'people', 'human', '남성', '여성', '성별'],
+                'color_search': ['빨간색', '파란색', '노란색', '초록색', '보라색', '분홍색', '검은색', '흰색', '회색', '주황색', '갈색', '색깔', '색상', '옷', '입은', '착용'],
+                'temporal_analysis': ['시간', '분', '초', '언제', '몇시', '성비', '인원', '통계'],
+                'inter_video_search': ['비오는', '밤', '낮', '날씨', '조명', '영상간', '다른영상'],
+                'general_chat': ['안녕', 'hello', 'hi', '고마워', '감사', '도움', '질문']
+            }
+            
+            # 의도 점수 계산
+            intent_scores = {}
+            for intent, keywords in intent_keywords.items():
+                score = sum(1 for keyword in keywords if keyword in message_lower)
+                if score > 0:
+                    intent_scores[intent] = score
+            
+            # 가장 높은 점수의 의도 선택
+            if intent_scores:
+                detected_intent = max(intent_scores, key=intent_scores.get)
+                confidence = intent_scores[detected_intent] / len(message_lower.split())
+                print(f"🎯 의도 분류: {detected_intent} (신뢰도: {confidence:.2f})")
+                return detected_intent, confidence
+            else:
+                print("🎯 의도 분류: general_chat (기본값)")
+                return 'general_chat', 0.0
+                
+        except Exception as e:
+            print(f"❌ 의도 분류 중 오류: {e}")
+            return 'general_chat', 0.0
+
+    def _parse_time_range(self, message):
+        """메시지에서 시간 범위를 파싱"""
+        try:
+            import re
+            
+            # 시간 패턴 매칭 (예: "3:00~5:00", "3분~5분", "180초~300초")
+            time_patterns = [
+                r'(\d+):(\d+)~(\d+):(\d+)',  # 3:00~5:00
+                r'(\d+)분~(\d+)분',          # 3분~5분
+                r'(\d+)초~(\d+)초',          # 180초~300초
+            ]
+            
+            for pattern in time_patterns:
+                match = re.search(pattern, message)
+                if match:
+                    groups = match.groups()
+                    if len(groups) == 4:  # 3:00~5:00 형식
+                        start_min, start_sec, end_min, end_sec = map(int, groups)
+                        start_time = start_min * 60 + start_sec
+                        end_time = end_min * 60 + end_sec
+                        return start_time, end_time
+                    elif len(groups) == 2:  # 분 또는 초 형식
+                        start_val, end_val = map(int, groups)
+                        if '분' in message:
+                            start_time = start_val * 60
+                            end_time = end_val * 60
+                        else:  # 초
+                            start_time = start_val
+                            end_time = end_val
+                        return start_time, end_time
+            
+            return None
+            
+        except Exception as e:
+            print(f"❌ 시간 범위 파싱 중 오류: {e}")
+            return None
+
+    def _find_relevant_frames(self, message, analysis_json_data, video_id):
+        """사용자 메시지에 따라 관련 프레임을 찾아서 이미지 URL과 함께 반환 (의도 기반)"""
+        try:
+            if not analysis_json_data or 'frame_results' not in analysis_json_data:
+                print("❌ 분석 데이터 또는 프레임 결과가 없습니다.")
+                return []
+            
+            relevant_frames = []
+            message_lower = message.lower()
+            
+            # 프레임 결과에서 매칭되는 프레임 찾기
+            frame_results = analysis_json_data.get('frame_results', [])
+            print(f"🔍 검색할 프레임 수: {len(frame_results)}")
+            
+            # 의도 분류
+            intent, confidence = self._classify_intent(message)
+            print(f"🎯 검색 의도: {intent}")
+            
+            # 색상 기반 검색
+            color_keywords = {
+                '빨간색': ['red', '빨강', '빨간색'],
+                '파란색': ['blue', '파랑', '파란색'],
+                '노란색': ['yellow', '노랑', '노란색'],
+                '초록색': ['green', '녹색', '초록색'],
+                '보라색': ['purple', '자주색', '보라색'],
+                '분홍색': ['pink', '핑크', '분홍색'],
+                '검은색': ['black', '검정', '검은색'],
+                '흰색': ['white', '하양', '흰색'],
+                '회색': ['gray', 'grey', '회색'],
+                '주황색': ['orange', '오렌지', '주황색'],
+                '갈색': ['brown', '브라운', '갈색'],
+                '옷': ['clothing', 'clothes', 'dress', 'shirt', 'pants', 'jacket']
+            }
+            
+            # 의도 기반 프레임 검색
+            if intent == 'color_search':
+                print("🎨 색상 검색 모드")
+                detected_colors = []
+                for color_korean, color_terms in color_keywords.items():
+                    if any(term in message_lower for term in color_terms):
+                        detected_colors.append(color_korean)
+                        print(f"🎨 색상 검색 감지: {color_korean}")
+                
+                if detected_colors:
+                    print(f"🎨 색상 검색 모드: {detected_colors}")
+                    print(f"🔍 검색할 프레임 수: {len(frame_results)}")
+                    for frame in frame_results:
+                        persons = frame.get('persons', [])
+                        
+                        # 색상 분석 결과 확인
+                        dominant_colors = frame.get('dominant_colors', [])
+                        color_match_found = False
+                        
+                        # 요청된 색상과 매칭되는지 확인 (더 유연한 매칭)
+                        for detected_color in detected_colors:
+                            for color_info in dominant_colors:
+                                color_name = color_info.get('color', '').lower()
+                                detected_color_lower = detected_color.lower()
+                                
+                                # 색상 키워드 매핑을 통한 매칭
+                                color_mapping = {
+                                    '분홍색': 'pink', '핑크': 'pink',
+                                    '빨간색': 'red', '빨강': 'red',
+                                    '파란색': 'blue', '파랑': 'blue',
+                                    '노란색': 'yellow', '노랑': 'yellow',
+                                    '초록색': 'green', '녹색': 'green',
+                                    '보라색': 'purple', '자주색': 'purple',
+                                    '검은색': 'black', '검정': 'black',
+                                    '흰색': 'white', '하양': 'white',
+                                    '회색': 'gray', 'grey': 'gray',
+                                    '주황색': 'orange', '오렌지': 'orange',
+                                    '갈색': 'brown', '브라운': 'brown'
+                                }
+                                
+                                # 매핑된 색상으로 비교
+                                mapped_color = color_mapping.get(detected_color_lower, detected_color_lower)
+                                
+                                # 더 유연한 색상 매칭 (색상이 없어도 일단 포함)
+                                if (mapped_color == color_name or 
+                                    detected_color_lower == color_name or 
+                                    detected_color_lower in color_name or 
+                                    color_name in detected_color_lower or
+                                    len(dominant_colors) == 0):  # 색상 정보가 없어도 포함
+                                    color_match_found = True
+                                    print(f"✅ 색상 매칭 발견: {detected_color} -> {color_info}")
+                                    break
+                            if color_match_found:
+                                break
+                        
+                        # 디버깅을 위한 로그 추가
+                        print(f"🔍 프레임 {frame.get('image_id', 0)} 색상 분석:")
+                        print(f"  - 요청된 색상: {detected_colors}")
+                        print(f"  - 감지된 색상: {[c.get('color', '') for c in dominant_colors]}")
+                        print(f"  - 매칭 결과: {color_match_found}")
+                        
+                        # 색상 검색의 경우 색상 매칭이 된 프레임만 포함
+                        if color_match_found:
+                            frame_image_path = frame.get('frame_image_path', '')
+                            actual_image_path = None
+                            if frame_image_path:
+                                # 실제 파일 시스템 경로 생성
+                                import os
+                                from django.conf import settings
+                                actual_image_path = os.path.join(settings.MEDIA_ROOT, frame_image_path)
+                                if os.path.exists(actual_image_path):
+                                    print(f"✅ 실제 이미지 파일 존재: {actual_image_path}")
+                                else:
+                                    print(f"❌ 실제 이미지 파일 없음: {actual_image_path}")
+                            
+                            frame_info = {
+                                'image_id': frame.get('image_id', 0),
+                                'timestamp': frame.get('timestamp', 0),
+                                'frame_image_path': frame_image_path,
+                                'image_url': f'/media/{frame_image_path}',
+                                'actual_image_path': actual_image_path,  # 실제 파일 경로 추가
+                                'persons': persons,
+                                'objects': frame.get('objects', []),
+                                'scene_attributes': frame.get('scene_attributes', {}),
+                                'dominant_colors': dominant_colors,  # 색상 분석 결과 추가
+                                'relevance_score': 2,  # 색상 매칭 시 높은 점수
+                                'color_search_info': {
+                                    'requested_colors': detected_colors,
+                                    'color_info_available': len(dominant_colors) > 0,
+                                    'color_match_found': color_match_found,
+                                    'actual_image_available': actual_image_path is not None,
+                                    'message': f"색상 분석 결과: {dominant_colors} | 요청하신 색상: {', '.join(detected_colors)}"
+                                }
+                            }
+                            relevant_frames.append(frame_info)
+                            print(f"✅ 프레임 {frame_info['image_id']} 추가 (색상 매칭 성공)")
+                        else:
+                            print(f"❌ 프레임 {frame.get('image_id', 0)}: 색상 매칭 실패 - {detected_colors} vs {dominant_colors}")
+                
+                else:
+                    print("🎨 색상 키워드 감지 실패 - 일반 검색으로 전환")
+                    # 색상 키워드가 감지되지 않으면 모든 프레임 포함
+                    for frame in frame_results:
+                        persons = frame.get('persons', [])
+                        if persons:  # 사람이 있는 프레임만
+                            frame_info = {
+                                'image_id': frame.get('image_id', 0),
+                                'timestamp': frame.get('timestamp', 0),
+                                'frame_image_path': frame.get('frame_image_path', ''),
+                                'image_url': f'/media/{frame.get("frame_image_path", "")}',
+                                'persons': persons,
+                                'objects': frame.get('objects', []),
+                                'scene_attributes': frame.get('scene_attributes', {}),
+                                'relevance_score': len(persons)
+                            }
+                            relevant_frames.append(frame_info)
+                            print(f"✅ 프레임 {frame_info['image_id']} 추가 (일반 검색, 사람 {len(persons)}명)")
+            
+            elif intent == 'person_search':
+                print("👤 사람 검색 모드")
+                print(f"🔍 검색할 프레임 수: {len(frame_results)}")
+                for frame in frame_results:
+                    persons = frame.get('persons', [])
+                    print(f"🔍 프레임 {frame.get('image_id', 0)}: persons = {persons}")
+                    # 사람이 감지된 프레임만 포함
+                    if persons and len(persons) > 0:
+                        frame_info = {
+                            'image_id': frame.get('image_id', 0),
+                            'timestamp': frame.get('timestamp', 0),
+                            'frame_image_path': frame.get('frame_image_path', ''),
+                            'image_url': f'/media/{frame.get("frame_image_path", "")}',
+                            'persons': persons,
+                            'objects': frame.get('objects', []),
+                            'scene_attributes': frame.get('scene_attributes', {}),
+                            'relevance_score': len(persons) * 2  # 사람 수에 비례한 점수
+                        }
+                        relevant_frames.append(frame_info)
+                        print(f"✅ 프레임 {frame_info['image_id']} 추가 (사람 {len(persons)}명 감지)")
+                        print(f"✅ 프레임 상세 정보: {frame_info}")
+                    else:
+                        print(f"❌ 프레임 {frame.get('image_id', 0)}: 사람 감지 안됨")
+            
+            elif intent == 'video_summary':
+                print("📋 요약 모드 - 주요 프레임 선택")
+                # 활동 수준이 높은 프레임 우선 선택
+                frame_scores = []
+                for frame in frame_results:
+                    scene_attrs = frame.get('scene_attributes', {})
+                    activity_level = scene_attrs.get('activity_level', 'low')
+                    person_count = len(frame.get('persons', []))
+                    
+                    score = 0
+                    if activity_level == 'high':
+                        score += 3
+                    elif activity_level == 'medium':
+                        score += 2
+                    else:
+                        score += 1
+                    
+                    score += min(person_count, 3)  # 사람 수에 따른 점수
+                    frame_scores.append((frame, score))
+                
+                # 점수 순으로 정렬하여 상위 프레임 선택
+                frame_scores.sort(key=lambda x: x[1], reverse=True)
+                for frame, score in frame_scores[:3]:
+                    frame_info = {
+                        'image_id': frame.get('image_id', 0),
+                        'timestamp': frame.get('timestamp', 0),
+                        'frame_image_path': frame.get('frame_image_path', ''),
+                        'image_url': f'/media/{frame.get("frame_image_path", "")}',
+                        'persons': frame.get('persons', []),
+                        'objects': frame.get('objects', []),
+                        'scene_attributes': frame.get('scene_attributes', {}),
+                        'relevance_score': score
+                    }
+                    relevant_frames.append(frame_info)
+                    print(f"✅ 프레임 {frame_info['image_id']} 추가 (요약용, 점수: {score})")
+            
+            elif intent == 'temporal_analysis':
+                print("⏰ 시간대 분석 모드")
+                # 시간 범위 파싱
+                time_range = self._parse_time_range(message)
+                if time_range:
+                    start_time, end_time = time_range
+                    print(f"⏰ 시간 범위: {start_time}초 ~ {end_time}초")
+                    for frame in frame_results:
+                        timestamp = frame.get('timestamp', 0)
+                        if start_time <= timestamp <= end_time:
+                            frame_info = {
+                                'image_id': frame.get('image_id', 0),
+                                'timestamp': frame.get('timestamp', 0),
+                                'frame_image_path': frame.get('frame_image_path', ''),
+                                'image_url': f'/media/{frame.get("frame_image_path", "")}',
+                                'persons': frame.get('persons', []),
+                                'objects': frame.get('objects', []),
+                                'scene_attributes': frame.get('scene_attributes', {}),
+                                'relevance_score': 1
+                            }
+                            relevant_frames.append(frame_info)
+                            print(f"✅ 프레임 {frame_info['image_id']} 추가 (시간대: {timestamp}초)")
+                else:
+                    # 시간 범위를 파싱할 수 없는 경우 전체 프레임
+                    relevant_frames = [{
+                        'image_id': frame.get('image_id', 0),
+                        'timestamp': frame.get('timestamp', 0),
+                        'frame_image_path': frame.get('frame_image_path', ''),
+                        'image_url': f'/media/{frame.get("frame_image_path", "")}',
+                        'persons': frame.get('persons', []),
+                        'objects': frame.get('objects', []),
+                        'scene_attributes': frame.get('scene_attributes', {}),
+                        'relevance_score': 1
+                    } for frame in frame_results]
+                    print(f"✅ 시간 범위 파싱 실패 - 전체 프레임 {len(relevant_frames)}개 선택")
+            
+            else:
+                print("📋 일반 검색 모드")
+                # 처음 2개 프레임 선택
+                for frame in frame_results[:2]:
+                    frame_info = {
+                        'image_id': frame.get('image_id', 0),
+                        'timestamp': frame.get('timestamp', 0),
+                        'frame_image_path': frame.get('frame_image_path', ''),
+                        'image_url': f'/media/{frame.get("frame_image_path", "")}',
+                        'persons': frame.get('persons', []),
+                        'objects': frame.get('objects', []),
+                        'scene_attributes': frame.get('scene_attributes', {}),
+                        'relevance_score': 1
+                    }
+                    relevant_frames.append(frame_info)
+                    print(f"✅ 프레임 {frame_info['image_id']} 추가 (일반 검색)")
+            
+            # 관련도 점수순으로 정렬하고 상위 3개만 반환
+            relevant_frames.sort(key=lambda x: x['relevance_score'], reverse=True)
+            result = relevant_frames[:3]
+            print(f"🎯 최종 선택된 프레임 수: {len(result)}")
+            print(f"🎯 최종 프레임 상세: {result}")
+            return result
+            
+        except Exception as e:
+            print(f"❌ 프레임 검색 실패: {e}")
+            return []
+    
+    def _handle_special_commands(self, message, video_id):
+        """특별 명령어 처리 (요약, 하이라이트)"""
+        try:
+            message_lower = message.lower().strip()
+            
+            # 영상 요약 명령어
+            if any(keyword in message_lower for keyword in ['요약', 'summary', '영상 요약', '영상 요약해줘', '영상 하이라이트 알려줘']):
+                return self._handle_video_summary_command(message_lower, video_id)
+            
+            # 영상 하이라이트 명령어
+            elif any(keyword in message_lower for keyword in ['하이라이트', 'highlight', '주요 장면', '중요한 장면']):
+                return self._handle_video_highlight_command(message_lower, video_id)
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ 특별 명령어 처리 오류: {e}")
+            return None
+    
+    def _handle_video_summary_command(self, message, video_id):
+        """영상 요약 명령어 처리"""
+        try:
+            # 요약 타입 결정
+            summary_type = 'comprehensive'
+            if '간단' in message or 'brief' in message:
+                summary_type = 'brief'
+            elif '상세' in message or 'detailed' in message:
+                summary_type = 'detailed'
+            
+            # VideoSummaryView 인스턴스 생성 및 요약 생성
+            summary_view = VideoSummaryView()
+            summary_result = summary_view._generate_video_summary(
+                Video.objects.get(id=video_id), 
+                summary_type
+            )
+            
+            if summary_result and summary_result.get('summary'):
+                return f"📝 **영상 요약** ({summary_type})\n\n{summary_result['summary']}"
+            else:
+                return "❌ 영상 요약을 생성할 수 없습니다. 영상 분석이 완료되었는지 확인해주세요."
+                
+        except Exception as e:
+            logger.error(f"❌ 영상 요약 명령어 처리 오류: {e}")
+            return f"❌ 영상 요약 생성 중 오류가 발생했습니다: {str(e)}"
+    
+    def _handle_video_highlight_command(self, message, video_id):
+        """영상 하이라이트 명령어 처리"""
+        try:
+            # 하이라이트 기준 설정
+            criteria = {
+                'min_score': 2.0,
+                'max_highlights': 5
+            }
+            
+            if '많이' in message or 'more' in message:
+                criteria['max_highlights'] = 10
+            elif '적게' in message or 'few' in message:
+                criteria['max_highlights'] = 3
+            
+            # VideoHighlightView 인스턴스 생성 및 하이라이트 추출
+            highlight_view = VideoHighlightView()
+            highlights = highlight_view._extract_highlights(
+                Video.objects.get(id=video_id), 
+                criteria
+            )
+            
+            if highlights:
+                highlight_text = "🎬 **영상 하이라이트**\n\n"
+                for i, highlight in enumerate(highlights, 1):
+                    highlight_text += f"{i}. **{highlight['timestamp']:.1f}초** - {highlight['description']}\n"
+                    highlight_text += f"   - 중요도: {highlight['significance']} (점수: {highlight['score']:.1f})\n"
+                    highlight_text += f"   - 인원: {highlight['person_count']}명, 장면: {highlight['scene_type']}\n\n"
+                
+                return highlight_text
+            else:
+                return "❌ 하이라이트를 찾을 수 없습니다. 영상 분석이 완료되었는지 확인해주세요."
+                
+        except Exception as e:
+            logger.error(f"❌ 영상 하이라이트 명령어 처리 오류: {e}")
+            return f"❌ 영상 하이라이트 생성 중 오류가 발생했습니다: {str(e)}"
+
+class FrameImageView(APIView):
+    """프레임 이미지 서빙"""
+    permission_classes = [AllowAny]
+    
+    def get(self, request, video_id, frame_number):
+        try:
+            from django.conf import settings
+            # 프레임 이미지 경로 생성
+            frame_filename = f"video{video_id}_frame{frame_number}.jpg"
+            frame_path = os.path.join(settings.MEDIA_ROOT, 'images', frame_filename)
+            
+            # 파일이 존재하는지 확인
+            if not os.path.exists(frame_path):
+                raise Http404("프레임 이미지를 찾을 수 없습니다")
+            
+            # 이미지 파일 읽기
+            with open(frame_path, 'rb') as f:
+                image_data = f.read()
+            
+            # HTTP 응답으로 이미지 반환
+            response = HttpResponse(image_data, content_type='image/jpeg')
+            response['Content-Disposition'] = f'inline; filename="{frame_filename}"'
+            return response
+            
+        except Exception as e:
+            return Response({
+                'error': f'프레임 이미지 로드 실패: {str(e)}'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+
+class VideoSummaryView(APIView):
+    """영상 요약 기능"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        try:
+            video_id = request.data.get('video_id')
+            summary_type = request.data.get('summary_type', 'comprehensive')  # comprehensive, brief, detailed
+            
+            logger.info(f"📝 영상 요약 요청: 비디오={video_id}, 타입={summary_type}")
+            
+            if not video_id:
+                return Response({'error': '비디오 ID가 필요합니다.'}, status=400)
+            
+            try:
+                video = Video.objects.get(id=video_id)
+            except Video.DoesNotExist:
+                return Response({'error': '비디오를 찾을 수 없습니다.'}, status=404)
+            
+            # 영상 요약 생성
+            summary_result = self._generate_video_summary(video, summary_type)
+            
+            return Response({
+                'video_id': video_id,
+                'video_name': video.original_name,
+                'summary_type': summary_type,
+                'summary_result': summary_result,
+                'analysis_type': 'video_summary'
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ 영상 요약 오류: {e}")
+            return Response({'error': str(e)}, status=500)
+    
+    def _generate_video_summary(self, video, summary_type):
+        """영상 요약 생성"""
+        try:
+            # 분석 결과 JSON 파일 읽기
+            if not video.analysis_json_path:
+                return {
+                    'summary': '분석 결과가 없습니다. 영상 분석을 먼저 완료해주세요.',
+                    'key_events': [],
+                    'statistics': {},
+                    'duration': video.duration,
+                    'frame_count': 0
+                }
+            
+            json_path = os.path.join(settings.MEDIA_ROOT, video.analysis_json_path)
+            if not os.path.exists(json_path):
+                return {
+                    'summary': '분석 결과 파일을 찾을 수 없습니다.',
+                    'key_events': [],
+                    'statistics': {},
+                    'duration': video.duration,
+                    'frame_count': 0
+                }
+            
+            with open(json_path, 'r', encoding='utf-8') as f:
+                analysis_data = json.load(f)
+            
+            # 기본 통계 수집
+            statistics = self._collect_video_statistics(video, analysis_data)
+            
+            # 키 이벤트 추출
+            key_events = self._extract_key_events(analysis_data)
+            
+            # 요약 타입에 따른 처리
+            if summary_type == 'brief':
+                summary_text = self._generate_brief_summary(statistics, key_events)
+            elif summary_type == 'detailed':
+                summary_text = self._generate_detailed_summary(statistics, key_events, analysis_data)
+            else:  # comprehensive
+                summary_text = self._generate_comprehensive_summary(statistics, key_events, analysis_data)
+            
+            return {
+                'summary': summary_text,
+                'key_events': key_events,
+                'statistics': statistics,
+                'duration': video.duration,
+                'frame_count': len(analysis_data.get('frame_results', [])),
+                'summary_type': summary_type
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ 영상 요약 생성 오류: {e}")
+            return {
+                'summary': f'요약 생성 중 오류가 발생했습니다: {str(e)}',
+                'key_events': [],
+                'statistics': {},
+                'duration': video.duration,
+                'frame_count': 0
+            }
+    
+    def _collect_video_statistics(self, video, analysis_data):
+        """영상 통계 수집 - 💡핵심 인사이트 포함"""
+        try:
+            video_summary = analysis_data.get('video_summary', {})
+            frame_results = analysis_data.get('frame_results', [])
+            
+            # 기본 통계
+            stats = {
+                'total_duration': video.duration,
+                'total_frames': len(frame_results),
+                'total_detections': video_summary.get('total_detections', 0),
+                'unique_persons': video_summary.get('unique_persons', 0),
+                'quality_score': video_summary.get('quality_assessment', {}).get('overall_score', 0),
+                'scene_diversity': video_summary.get('scene_diversity', {}).get('diversity_score', 0)
+            }
+            
+            # 시간대별 활동 분석
+            temporal_analysis = video_summary.get('temporal_analysis', {})
+            stats.update({
+                'peak_time': temporal_analysis.get('peak_time_seconds', 0),
+                'peak_person_count': temporal_analysis.get('peak_person_count', 0),
+                'average_person_count': temporal_analysis.get('average_person_count', 0)
+            })
+            
+            # 장면 특성 분석
+            scene_distribution = video_summary.get('scene_diversity', {})
+            stats.update({
+                'scene_types': scene_distribution.get('scene_type_distribution', {}),
+                'activity_levels': scene_distribution.get('activity_level_distribution', {}),
+                'lighting_types': scene_distribution.get('lighting_distribution', {})
+            })
+            
+            # 💡 핵심 인사이트 생성
+            stats['key_insights'] = self._generate_key_insights_for_summary(stats, frame_results)
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"❌ 통계 수집 오류: {e}")
+            return {}
+    
+    def _generate_key_insights_for_summary(self, stats, frame_results):
+        """💡 핵심 인사이트 생성 (영상 요약용)"""
+        insights = []
+        
+        try:
+            # 1. 인원 구성 인사이트
+            person_count = stats.get('unique_persons', 0)
+            peak_count = stats.get('peak_person_count', 0)
+            
+            if person_count > 0:
+                if peak_count > 5:
+                    insights.append(f"다수 인원 등장 (최대 {peak_count}명 동시 등장)")
+                elif peak_count > 2:
+                    insights.append(f"소규모 그룹 활동 ({peak_count}명)")
+                else:
+                    insights.append(f"소수 인원 영상 ({person_count}명)")
+            
+            # 2. 영상 길이 인사이트
+            duration = stats.get('total_duration', 0)
+            if duration > 300:  # 5분 이상
+                insights.append(f"긴 영상 ({duration/60:.1f}분)")
+            elif duration > 60:
+                insights.append(f"중간 길이 영상 ({duration/60:.1f}분)")
+            else:
+                insights.append(f"짧은 영상 ({duration:.0f}초)")
+            
+            # 3. 품질 인사이트
+            quality_score = stats.get('quality_score', 0)
+            if quality_score > 0.8:
+                insights.append(f"높은 품질 (점수: {quality_score:.2f})")
+            elif quality_score > 0.6:
+                insights.append(f"양호한 품질 (점수: {quality_score:.2f})")
+            elif quality_score > 0:
+                insights.append(f"보통 품질 (점수: {quality_score:.2f})")
+            
+            # 4. 장면 다양성 인사이트
+            scene_types = stats.get('scene_types', {})
+            if len(scene_types) > 3:
+                insights.append(f"다양한 장면 포함 ({len(scene_types)}가지 장소)")
+            elif len(scene_types) > 0:
+                main_scenes = list(scene_types.keys())[:2]
+                insights.append(f"주요 장소: {', '.join(main_scenes)}")
+            
+            # 5. 활동 수준 인사이트
+            activity_levels = stats.get('activity_levels', {})
+            if 'high' in activity_levels:
+                insights.append(f"활발한 활동 감지")
+            elif 'medium' in activity_levels:
+                insights.append(f"중간 수준 활동")
+            
+            return insights[:5]  # 최대 5개 인사이트
+            
+        except Exception as e:
+            logger.error(f"❌ 핵심 인사이트 생성 오류: {e}")
+            return ["영상 분석 완료"]
+    
+    def _extract_key_events(self, analysis_data):
+        """키 이벤트 추출"""
+        try:
+            key_events = []
+            frame_results = analysis_data.get('frame_results', [])
+            
+            # 사람 수가 많은 장면들을 키 이벤트로 선정
+            for frame in frame_results:
+                person_count = len(frame.get('persons', []))
+                if person_count >= 2:  # 2명 이상이 있는 장면
+                    key_events.append({
+                        'timestamp': frame.get('timestamp', 0),
+                        'description': f"{person_count}명이 감지된 장면",
+                        'person_count': person_count,
+                        'scene_type': frame.get('scene_attributes', {}).get('scene_type', 'unknown'),
+                        'activity_level': frame.get('scene_attributes', {}).get('activity_level', 'medium')
+                    })
+            
+            # 시간순으로 정렬
+            key_events.sort(key=lambda x: x['timestamp'])
+            
+            return key_events[:10]  # 상위 10개만 반환
+            
+        except Exception as e:
+            logger.error(f"❌ 키 이벤트 추출 오류: {e}")
+            return []
+    
+    def _generate_brief_summary(self, statistics, key_events):
+        """간단 요약 (1-2문장, 💡핵심만 강조)"""
+        try:
+            duration = statistics.get('total_duration', 0)
+            duration_min = duration / 60
+            person_count = statistics.get('unique_persons', 0)
+            key_insights = statistics.get('key_insights', [])
+            
+            # 가장 중요한 핵심 1개 + 기본 정보
+            main_insight = key_insights[0] if key_insights else "영상 분석 완료"
+            
+            return f"💡 {main_insight}. 영상 길이 {duration_min:.1f}분, 총 {person_count}명 등장."
+            
+        except Exception as e:
+            logger.error(f"❌ 간단 요약 생성 오류: {e}")
+            return "요약 생성 중 오류가 발생했습니다."
+    
+    def _generate_detailed_summary(self, statistics, key_events, analysis_data):
+        """상세 요약 (문단 형식, 💡핵심 3개 + 주요 이벤트)"""
+        try:
+            duration = statistics.get('total_duration', 0)
+            duration_min = duration / 60
+            person_count = statistics.get('unique_persons', 0)
+            peak_count = statistics.get('peak_person_count', 0)
+            key_insights = statistics.get('key_insights', [])
+            
+            parts = [
+                f"📹 이 영상은 {duration_min:.1f}분 길이로, 총 {person_count}명이 등장합니다.",
+                "\n💡 핵심 포인트:",
+                *[f"  • {insight}" for insight in key_insights[:3]]
+            ]
+            
+            # 주요 이벤트 3개
+            if key_events:
+                parts.append("\n⏱️ 주요 장면:")
+                for i, event in enumerate(key_events[:3], 1):
+                    timestamp = event.get('timestamp', 0)
+                    time_str = f"{int(timestamp//60)}:{int(timestamp%60):02d}"
+                    desc = event.get('description', '장면')[:50]
+                    parts.append(f"  {i}. [{time_str}] {desc}")
+            
+            # 품질 정보
+            quality_score = statistics.get('quality_score', 0)
+            if quality_score > 0:
+                quality_status = "우수" if quality_score > 0.8 else "양호" if quality_score > 0.6 else "보통"
+                parts.append(f"\n🎯 영상 품질: {quality_status} ({quality_score:.2f}/1.0)")
+            
+            # 장면 유형
+            scene_types = statistics.get('scene_types', {})
+            if scene_types:
+                scene_list = [f"{k}({v})" for k, v in list(scene_types.items())[:3]]
+                parts.append(f"\n🎬 장면 유형: {', '.join(scene_list)}")
+            
+            return "\n".join(parts)
+            
+        except Exception as e:
+            logger.error(f"❌ 상세 요약 생성 오류: {e}")
+            return "상세 요약 생성 중 오류가 발생했습니다."
+    
+    def _generate_comprehensive_summary(self, statistics, key_events, analysis_data):
+        """종합 요약 (전체 분석, 💡핵심 5개 + 모든 이벤트 + 통계)"""
+        try:
+            duration = statistics.get('total_duration', 0)
+            duration_min = duration / 60
+            person_count = statistics.get('unique_persons', 0)
+            peak_count = statistics.get('peak_person_count', 0)
+            key_insights = statistics.get('key_insights', [])
+            
+            parts = [
+                f"📹 영상 정보",
+                f"  • 길이: {duration_min:.1f}분",
+                f"  • 등장 인원: {person_count}명",
+                f"  • 분석 프레임: {statistics.get('total_frames', 0)}개",
+                f"  • 총 감지 객체: {statistics.get('total_detections', 0)}개",
+                "\n💡 핵심 인사이트 (전체)"
+            ]
+            
+            # 전체 핵심 인사이트 (최대 5개)
+            parts.extend([f"  • {insight}" for insight in key_insights[:5]])
+            
+            # 주요 이벤트 전체 (최대 8개)
+            if key_events:
+                parts.append("\n⏱️ 주요 이벤트 타임라인:")
+                for i, event in enumerate(key_events[:8], 1):
+                    timestamp = event.get('timestamp', 0)
+                    time_str = f"{int(timestamp//60)}:{int(timestamp%60):02d}"
+                    desc = event.get('description', '장면')[:60]
+                    person_cnt = event.get('person_count', 0)
+                    activity = event.get('activity_level', 'medium')
+                    emoji = "🔴" if activity == 'high' else "🟡" if activity == 'medium' else "🟢"
+                    parts.append(f"  {emoji} {i}. [{time_str}] {desc} ({person_cnt}명)")
+            
+            # 상세 통계
+            parts.append("\n📊 상세 통계:")
+            parts.append(f"  • 최대 동시 인원: {peak_count}명")
+            parts.append(f"  • 평균 동시 인원: {statistics.get('average_person_count', 0):.1f}명")
+            
+            # 품질 정보
+            quality_score = statistics.get('quality_score', 0)
+            if quality_score > 0:
+                quality_status = "우수" if quality_score > 0.8 else "양호" if quality_score > 0.6 else "보통"
+                parts.append(f"  • 영상 품질: {quality_status} ({quality_score:.2f}/1.0)")
+            
+            # 장면 분석
+            scene_types = statistics.get('scene_types', {})
+            if scene_types:
+                scene_list = ', '.join([f"{k}({v})" for k, v in list(scene_types.items())[:5]])
+                parts.append(f"  • 장면 유형: {scene_list}")
+            
+            activity_levels = statistics.get('activity_levels', {})
+            if activity_levels:
+                activity_list = ', '.join([f"{k}({v})" for k, v in activity_levels.items()])
+                parts.append(f"  • 활동 수준: {activity_list}")
+            
+            lighting_types = statistics.get('lighting_types', {})
+            if lighting_types:
+                lighting_list = ', '.join([f"{k}({v})" for k, v in lighting_types.items()])
+                parts.append(f"  • 조명 상태: {lighting_list}")
+            
+            # 다양성 점수
+            diversity = statistics.get('scene_diversity', 0)
+            if diversity > 0:
+                parts.append(f"  • 장면 다양성: {diversity:.2f}/1.0")
+            
+            return "\n".join(parts)
+            
+        except Exception as e:
+            logger.error(f"❌ 종합 요약 생성 오류: {e}")
+            return "종합 요약 생성 중 오류가 발생했습니다."
+
+
+class VideoHighlightView(APIView):
+    """영상 하이라이트 자동 추출"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        try:
+            video_id = request.data.get('video_id')
+            highlight_criteria = request.data.get('criteria', {})
+            
+            logger.info(f"🎬 하이라이트 추출 요청: 비디오={video_id}, 기준={highlight_criteria}")
+            
+            if not video_id:
+                return Response({'error': '비디오 ID가 필요합니다.'}, status=400)
+            
+            try:
+                video = Video.objects.get(id=video_id)
+            except Video.DoesNotExist:
+                return Response({'error': '비디오를 찾을 수 없습니다.'}, status=404)
+            
+            # 하이라이트 추출
+            highlights = self._extract_highlights(video, highlight_criteria)
+            
+            return Response({
+                'video_id': video_id,
+                'video_name': video.original_name,
+                'highlights': highlights,
+                'total_highlights': len(highlights),
+                'analysis_type': 'video_highlights'
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ 하이라이트 추출 오류: {e}")
+            return Response({'error': str(e)}, status=500)
+    
+    def _extract_highlights(self, video, criteria):
+        """하이라이트 추출"""
+        try:
+            # 분석 결과 JSON 파일 읽기
+            if not video.analysis_json_path:
+                return []
+            
+            json_path = os.path.join(settings.MEDIA_ROOT, video.analysis_json_path)
+            if not os.path.exists(json_path):
+                return []
+            
+            with open(json_path, 'r', encoding='utf-8') as f:
+                analysis_data = json.load(f)
+            
+            frame_results = analysis_data.get('frame_results', [])
+            if not frame_results:
+                return []
+            
+            # 프레임별 점수 계산
+            scored_frames = self._score_frames(frame_results, criteria)
+            
+            # 하이라이트 생성
+            highlights = self._create_highlights(scored_frames, criteria)
+            
+            return highlights
+            
+        except Exception as e:
+            logger.error(f"❌ 하이라이트 추출 오류: {e}")
+            return []
+    
+    def _score_frames(self, frame_results, criteria):
+        """프레임별 점수 계산"""
+        try:
+            scored_frames = []
+            
+            for frame in frame_results:
+                score = 0.0
+                
+                # 사람 수 점수 (더 많은 사람 = 더 높은 점수)
+                person_count = len(frame.get('persons', []))
+                if person_count > 0:
+                    score += person_count * 0.5
+                
+                # 품질 점수
+                quality_score = self._get_quality_score(frame)
+                score += quality_score * 0.3
+                
+                # 활동 수준 점수
+                activity_level = frame.get('scene_attributes', {}).get('activity_level', 'medium')
+                if activity_level == 'high':
+                    score += 1.0
+                elif activity_level == 'medium':
+                    score += 0.5
+                
+                # 장면 다양성 점수
+                scene_type = frame.get('scene_attributes', {}).get('scene_type', 'unknown')
+                if scene_type in ['detailed', 'complex']:
+                    score += 0.3
+                
+                # 신뢰도 점수
+                avg_confidence = self._get_average_confidence(frame)
+                score += avg_confidence * 0.2
+                
+                scored_frames.append({
+                    'frame': frame,
+                    'frame_id': frame.get('image_id', 0),
+                    'timestamp': frame.get('timestamp', 0),
+                    'score': score
+                })
+            
+            # 점수순으로 정렬
+            scored_frames.sort(key=lambda x: x['score'], reverse=True)
+            
+            return scored_frames
+            
+        except Exception as e:
+            logger.error(f"❌ 프레임 점수 계산 오류: {e}")
+            return []
+    
+    def _get_quality_score(self, frame):
+        """프레임 품질 점수 계산"""
+        try:
+            # 간단한 품질 점수 계산 (실제로는 더 복잡한 알고리즘 사용 가능)
+            persons = frame.get('persons', [])
+            if not persons:
+                return 0.0
+            
+            # 평균 신뢰도 기반 품질 점수
+            confidences = [person.get('confidence', 0) for person in persons]
+            avg_confidence = sum(confidences) / len(confidences) if confidences else 0
+            
+            return avg_confidence
+            
+        except Exception as e:
+            logger.error(f"❌ 품질 점수 계산 오류: {e}")
+            return 0.0
+    
+    def _get_average_confidence(self, frame):
+        """평균 신뢰도 계산"""
+        try:
+            persons = frame.get('persons', [])
+            if not persons:
+                return 0.0
+            
+            confidences = [person.get('confidence', 0) for person in persons]
+            return sum(confidences) / len(confidences) if confidences else 0
+            
+        except Exception as e:
+            logger.error(f"❌ 평균 신뢰도 계산 오류: {e}")
+            return 0.0
+    
+    def _create_highlights(self, scored_frames, criteria):
+        """하이라이트 생성"""
+        try:
+            highlights = []
+            min_score = criteria.get('min_score', 2.0)  # 최소 점수
+            max_highlights = criteria.get('max_highlights', 10)  # 최대 하이라이트 수
+            
+            # 점수 기준 필터링
+            filtered_frames = [f for f in scored_frames if f['score'] >= min_score]
+            
+            # 시간 간격을 고려한 하이라이트 선택
+            selected_highlights = []
+            last_timestamp = -10  # 최소 10초 간격
+            
+            for frame_data in filtered_frames[:max_highlights * 2]:  # 여유분을 두고 선택
+                if frame_data['timestamp'] - last_timestamp >= 10:  # 10초 이상 간격
+                    selected_highlights.append(frame_data)
+                    last_timestamp = frame_data['timestamp']
+                    
+                    if len(selected_highlights) >= max_highlights:
+                        break
+            
+            # 하이라이트 정보 생성
+            for i, frame_data in enumerate(selected_highlights):
+                frame = frame_data['frame']
+                highlight = {
+                    'id': i + 1,
+                    'timestamp': frame_data['timestamp'],
+                    'frame_id': frame_data['frame_id'],
+                    'score': frame_data['score'],
+                    'description': self._generate_highlight_description(frame),
+                    'person_count': len(frame.get('persons', [])),
+                    'thumbnail_url': f'/api/frame/{frame.get("video_id", 0)}/{frame_data["frame_id"]}/',
+                    'significance': self._get_significance_level(frame_data['score']),
+                    'scene_type': frame.get('scene_attributes', {}).get('scene_type', 'unknown'),
+                    'activity_level': frame.get('scene_attributes', {}).get('activity_level', 'medium')
+                }
+                highlights.append(highlight)
+            
+            return highlights
+            
+        except Exception as e:
+            logger.error(f"❌ 하이라이트 생성 오류: {e}")
+            return []
+    
+    def _generate_highlight_description(self, frame):
+        """하이라이트 설명 생성"""
+        try:
+            persons = frame.get('persons', [])
+            person_count = len(persons)
+            
+            if person_count == 0:
+                return "주요 장면"
+            elif person_count == 1:
+                return "1명이 등장하는 장면"
+            elif person_count <= 3:
+                return f"{person_count}명이 등장하는 장면"
+            else:
+                return f"{person_count}명이 등장하는 활발한 장면"
+                
+        except Exception as e:
+            logger.error(f"❌ 하이라이트 설명 생성 오류: {e}")
+            return "주요 장면"
+    
+    def _get_significance_level(self, score):
+        """중요도 레벨 반환"""
+        try:
+            if score >= 4.0:
+                return "매우 높음"
+            elif score >= 3.0:
+                return "높음"
+            elif score >= 2.0:
+                return "보통"
+            else:
+                return "낮음"
+                
+        except Exception as e:
+            logger.error(f"❌ 중요도 레벨 계산 오류: {e}")
+            return "보통"
+    
+    def _handle_special_commands(self, message, video_id):
+        """특별 명령어 처리 (AI별 개별 답변 생성)"""
+        try:
+            message_lower = message.lower().strip()
+            print(f"🔍 특별 명령어 검사: '{message_lower}'")
+            
+            # 영상 요약 명령어
+            if any(keyword in message_lower for keyword in ['요약', 'summary', '영상 요약', '영상 요약해줘', '영상 하이라이트 알려줘', '간단한 요약', '상세한 요약']):
+                print(f"✅ 영상 요약 명령어 감지: '{message_lower}'")
+                return self._handle_ai_generated_response(video_id, 'video_summary', message_lower)
+            
+            # 영상 하이라이트 명령어
+            elif any(keyword in message_lower for keyword in ['하이라이트', 'highlight', '주요 장면', '중요한 장면']):
+                return self._handle_ai_generated_response(video_id, 'video_highlights', message_lower)
+            
+            # 사람 찾기 명령어
+            elif any(keyword in message_lower for keyword in ['사람 찾아줘', '사람 찾기', '인물 검색', '사람 검색']):
+                return self._handle_ai_generated_response(video_id, 'person_search', message_lower)
+            
+            # 영상 간 검색 명령어
+            elif any(keyword in message_lower for keyword in ['비가오는 밤', '비 오는 밤', '밤에 촬영', '어두운 영상', '비 오는 날']):
+                return self._handle_ai_generated_response(video_id, 'inter_video_search', {'query': message_lower})
+            
+            # 영상 내 검색 명령어
+            elif any(keyword in message_lower for keyword in ['주황색 상의', '주황 옷', '주황색 옷', '주황 상의', '오렌지 옷']):
+                return self._handle_ai_generated_response(video_id, 'intra_video_search', {'query': message_lower})
+            
+            # 시간대별 분석 명령어
+            elif any(keyword in message_lower for keyword in ['성비 분포', '성별 분포', '남녀 비율', '시간대별', '3시', '5시']):
+                time_range = {'start': 180, 'end': 300}  # 기본값: 3분-5분
+                return self._handle_ai_generated_response(video_id, 'temporal_analysis', {'time_range': time_range})
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ 특별 명령어 처리 오류: {e}")
+            return None
+    
+    def _handle_ai_generated_response(self, video_id, query_type, query_data=None):
+        """AI별 개별 답변 생성 및 통합"""
+        try:
+            logger.info(f"🤖 AI 응답 생성 시작: video_id={video_id}, query_type={query_type}")
+            
+            # AI 응답 생성
+            ai_responses = ai_response_generator.generate_responses(video_id, query_type, query_data)
+            
+            if not ai_responses:
+                return "❌ AI 응답 생성에 실패했습니다."
+            
+            # 개별 AI 답변들
+            individual_responses = ai_responses.get('individual', {})
+            optimal_response = ai_responses.get('optimal', '')
+            
+            # 통합 응답 생성
+            response_text = f"## 🎯 AI 통합 분석 결과\n\n{optimal_response}\n\n"
+            
+            # 각 AI별 답변 추가
+            response_text += "## 📊 각 AI별 개별 분석\n\n"
+            for ai_name, response in individual_responses.items():
+                ai_display_name = {
+                    'gpt': 'GPT-4o',
+                    'claude': 'Claude-3.5-Sonnet', 
+                    'mixtral': 'Mixtral-8x7B',
+                    'gemini': 'Gemini-2.5-Flash'
+                }.get(ai_name, ai_name.upper())
+                
+                response_text += f"### {ai_display_name}\n{response}\n\n"
+            
+            logger.info(f"✅ AI 응답 생성 완료: {len(response_text)}자")
+            return response_text
+            
+        except Exception as e:
+            logger.error(f"❌ AI 응답 생성 실패: {e}")
+            return f"❌ AI 응답 생성 중 오류가 발생했습니다: {str(e)}"
+    
+    def _handle_video_summary_command(self, message, video_id):
+        """영상 요약 명령어 처리"""
+        try:
+            # 요약 타입 결정
+            summary_type = 'comprehensive'
+            if '간단' in message or 'brief' in message:
+                summary_type = 'brief'
+            elif '상세' in message or 'detailed' in message:
+                summary_type = 'detailed'
+            
+            # VideoSummaryView 인스턴스 생성 및 요약 생성
+            summary_view = VideoSummaryView()
+            summary_result = summary_view._generate_video_summary(
+                Video.objects.get(id=video_id), 
+                summary_type
+            )
+            
+            if summary_result and summary_result.get('summary'):
+                return f"📝 **영상 요약** ({summary_type})\n\n{summary_result['summary']}"
+            else:
+                return "❌ 영상 요약을 생성할 수 없습니다. 영상 분석이 완료되었는지 확인해주세요."
+                
+        except Exception as e:
+            logger.error(f"❌ 영상 요약 명령어 처리 오류: {e}")
+            return f"❌ 영상 요약 생성 중 오류가 발생했습니다: {str(e)}"
+    
+    def _handle_video_highlight_command(self, message, video_id):
+        """영상 하이라이트 명령어 처리"""
+        try:
+            # 하이라이트 기준 설정
+            criteria = {
+                'min_score': 2.0,
+                'max_highlights': 5
+            }
+            
+            if '많이' in message or 'more' in message:
+                criteria['max_highlights'] = 10
+            elif '적게' in message or 'few' in message:
+                criteria['max_highlights'] = 3
+            
+            # VideoHighlightView 인스턴스 생성 및 하이라이트 추출
+            highlight_view = VideoHighlightView()
+            highlights = highlight_view._extract_highlights(
+                Video.objects.get(id=video_id), 
+                criteria
+            )
+            
+            if highlights:
+                highlight_text = "🎬 **영상 하이라이트**\n\n"
+                for i, highlight in enumerate(highlights, 1):
+                    highlight_text += f"{i}. **{highlight['timestamp']:.1f}초** - {highlight['description']}\n"
+                    highlight_text += f"   - 중요도: {highlight['significance']} (점수: {highlight['score']:.1f})\n"
+                    highlight_text += f"   - 인원: {highlight['person_count']}명, 장면: {highlight['scene_type']}\n\n"
+                
+                return highlight_text
+            else:
+                return "❌ 하이라이트를 찾을 수 없습니다. 영상 분석이 완료되었는지 확인해주세요."
+                
+        except Exception as e:
+            logger.error(f"❌ 영상 하이라이트 명령어 처리 오류: {e}")
+            return f"❌ 영상 하이라이트 생성 중 오류가 발생했습니다: {str(e)}"
