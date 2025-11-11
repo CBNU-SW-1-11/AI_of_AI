@@ -13,6 +13,7 @@ from difflib import SequenceMatcher
 # 로컬 imports
 from ..utils.error_handlers import get_user_friendly_error_message
 from ..utils.ai_utils import get_openai_completion_limit
+from .verification_sources import get_best_verification_source
 
 
 def detect_question_type_from_content(content):
@@ -159,471 +160,6 @@ JSON 형식으로만 응답:
             'confidence': 0.5,
             'reason': '분류 실패로 인한 기본값'
         }
-
-
-def quick_wikipedia_search(query, lang='ko'):
-    """Wikipedia에서 빠른 검색 (한국어/영어 지원)"""
-    try:
-        import requests
-        
-        # LLM이 추출한 키워드 또는 원본 질문을 그대로 사용
-        search_query = query
-        lang_name = "한국어" if lang == 'ko' else "영어"
-        print(f"🔍 Wikipedia ({lang_name}) 검색 시작: '{search_query}'")
-        
-        # Wikipedia API 검색
-        search_url = f"https://{lang}.wikipedia.org/w/api.php"
-        search_params = {
-            "action": "query",
-            "format": "json",
-            "list": "search",
-            "srsearch": search_query,
-            "utf8": 1,
-            "srlimit": 5,
-            "srprop": "size|wordcount|timestamp"
-        }
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-        
-        response = requests.get(search_url, params=search_params, headers=headers, timeout=10)
-        
-        # 응답 상태 확인
-        if response.status_code != 200:
-            print(f"⚠️ Wikipedia ({lang_name}) API 응답 오류: {response.status_code}")
-            return None
-        
-        # JSON 파싱
-        try:
-            search_data = response.json()
-        except json.JSONDecodeError as e:
-            print(f"⚠️ Wikipedia JSON 파싱 실패: {e}")
-            print(f"   응답 내용 (처음 200자): {response.text[:200]}")
-            return None
-        
-        if not search_data.get("query", {}).get("search"):
-            print(f"⚠️ Wikipedia 검색 결과 없음")
-            return None
-        
-        # 검색 결과 중 가장 관련성 높은 결과 선택
-        search_results = search_data["query"]["search"]
-        
-        # 쿼리의 키워드 추출 (공백 기준 분리)
-        original_keywords = search_query.lower().split()
-        
-        # 검색 결과와 원본 쿼리의 관련성 확인
-        best_result = None
-        best_score = 0
-        
-        for result in search_results[:5]:  # 상위 5개 결과 확인
-            title = result.get("title", "").lower()
-            snippet = result.get("snippet", "").lower()
-            
-            # 제목과 스니펫에서 키워드 매칭 점수 계산 (키워드 매칭이 가장 중요)
-            keyword_match_score = 0
-            matched_keywords = []
-            for keyword in original_keywords:
-                if keyword in title:
-                    keyword_match_score += 15  # 제목에 있으면 매우 높은 점수
-                    matched_keywords.append(keyword)
-                elif keyword in snippet:
-                    keyword_match_score += 8   # 스니펫에 있으면 중간 점수
-                    matched_keywords.append(keyword)
-            
-            # 키워드 매칭 점수만 사용 (wordcount는 신뢰할 수 없음)
-            score = keyword_match_score
-            
-            # 최소 1개 이상의 키워드가 매칭되어야 함
-            if len(matched_keywords) == 0:
-                continue  # 키워드가 하나도 매칭되지 않으면 건너뜀
-            
-            if score > best_score:
-                best_score = score
-                best_result = result
-        
-        # 관련성 점수가 너무 낮거나 키워드 매칭이 없으면 None 반환
-        if not best_result or best_score < 10:
-            print(f"⚠️ 검색 결과의 관련성 점수가 낮음 (최고 점수: {best_score:.1f}점). 검색 실패로 처리")
-            return None
-        
-        page_id = best_result["pageid"]
-        page_title = best_result["title"]
-        
-        print(f"📄 Wikipedia 페이지 발견: '{page_title}' (ID: {page_id}, 관련성 점수: {best_score:.1f})")
-        
-        # 페이지 내용 가져오기
-        content_params = {
-            "action": "query",
-            "format": "json",
-            "pageids": page_id,
-            "prop": "extracts",
-            "exintro": True,
-            "explaintext": True,
-            "exchars": 500  # 최대 500자
-        }
-        
-        content_response = requests.get(search_url, params=content_params, headers=headers, timeout=10)
-        
-        if content_response.status_code != 200:
-            print(f"⚠️ Wikipedia ({lang_name}) 페이지 내용 가져오기 실패: {content_response.status_code}")
-            return None
-        
-        try:
-            content_data = content_response.json()
-        except json.JSONDecodeError as e:
-            print(f"⚠️ Wikipedia 페이지 내용 JSON 파싱 실패: {e}")
-            return None
-        
-        pages = content_data.get("query", {}).get("pages", {})
-        if str(page_id) not in pages:
-            print(f"⚠️ Wikipedia 페이지 데이터 없음")
-            return None
-        
-        page_data = pages[str(page_id)]
-        
-        # "missing" 키 확인 (페이지가 없는 경우)
-        if page_data.get("missing"):
-            print(f"⚠️ Wikipedia 페이지가 존재하지 않음")
-            return None
-        
-        extract = page_data.get("extract", "")
-        title = page_data.get("title", page_title)
-        
-        if not extract:
-            print(f"⚠️ Wikipedia 페이지 내용 없음")
-            return None
-        
-        print(f"✅ Wikipedia 페이지 찾음: '{title}'")
-        print(f"📄 내용 미리보기: {extract[:200]}...")
-        
-        return {
-            "source": "Wikipedia",
-            "title": title,
-            "extract": extract,
-            "verified": True,
-            "confidence": 0.9
-        }
-        
-    except requests.exceptions.Timeout:
-        print(f"❌ Wikipedia 검색 타임아웃")
-        return None
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Wikipedia 네트워크 오류: {e}")
-        return None
-    except Exception as e:
-        print(f"❌ Wikipedia 검색 실패: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
-
-
-def search_duckduckgo_instant_answer(query):
-    """DuckDuckGo Instant Answer API 검색"""
-    try:
-        import requests
-        
-        # LLM이 추출한 키워드 또는 원본 질문을 그대로 사용
-        search_query = query
-        print(f"🔍 DuckDuckGo Instant Answer 검색 시작: '{search_query}'")
-        
-        # DuckDuckGo Instant Answer API
-        url = "https://api.duckduckgo.com/"
-        params = {
-            "q": search_query,
-            "format": "json",
-            "no_html": "1",
-            "skip_disambig": "1"
-        }
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        
-        response = requests.get(url, params=params, headers=headers, timeout=10)
-        
-        if response.status_code != 200:
-            print(f"⚠️ DuckDuckGo API 응답 오류: {response.status_code}")
-            return None
-        
-        try:
-            data = response.json()
-        except Exception as e:
-            print(f"⚠️ DuckDuckGo JSON 파싱 실패: {e}")
-            return None
-        
-        # AbstractText가 있으면 사용
-        if data.get("AbstractText"):
-            print(f"✅ DuckDuckGo Instant Answer 찾음")
-            return {
-                "source": "DuckDuckGo Instant Answer",
-                "title": data.get("Heading", search_query),
-                "extract": data.get("AbstractText", ""),
-                "url": data.get("AbstractURL", ""),
-                "verified": True,
-                "confidence": 0.85
-            }
-        
-        # RelatedTopics에서 첫 번째 결과 사용
-        if data.get("RelatedTopics") and len(data["RelatedTopics"]) > 0:
-            first_topic = data["RelatedTopics"][0]
-            if isinstance(first_topic, dict) and first_topic.get("Text"):
-                print(f"✅ DuckDuckGo RelatedTopics 찾음")
-                return {
-                    "source": "DuckDuckGo Instant Answer",
-                    "title": first_topic.get("FirstURL", "").split("/")[-1] if first_topic.get("FirstURL") else search_query,
-                    "extract": first_topic.get("Text", ""),
-                    "url": first_topic.get("FirstURL", ""),
-                    "verified": True,
-                    "confidence": 0.8
-                }
-        
-        print(f"⚠️ DuckDuckGo 검색 결과 없음")
-        return None
-        
-    except requests.exceptions.Timeout:
-        print(f"❌ DuckDuckGo 검색 타임아웃")
-        return None
-    except requests.exceptions.RequestException as e:
-        print(f"❌ DuckDuckGo 네트워크 오류: {e}")
-        return None
-    except Exception as e:
-        print(f"❌ DuckDuckGo 검색 실패: {e}")
-        return None
-
-
-def search_wikidata(query, lang='ko'):
-    """Wikidata SPARQL 검색 (한국어/영어 지원)"""
-    try:
-        import requests
-        
-        # LLM이 추출한 키워드 또는 원본 질문을 그대로 사용
-        search_query = query
-        lang_name = "한국어" if lang == 'ko' else "영어"
-        print(f"🔍 Wikidata ({lang_name}) 검색 시작: '{search_query}'")
-        
-        # Wikidata SPARQL 엔드포인트
-        sparql_url = "https://query.wikidata.org/sparql"
-        
-        # 검색어를 안전하게 이스케이프
-        search_query_escaped = search_query.replace('"', '\\"')
-        
-        # 최적화된 간단한 검색 쿼리 (타임아웃 방지)
-        # 검색어를 단어로 분리하여 더 빠른 검색
-        search_words = search_query_escaped.split()[:2]  # 최대 2개 단어만 사용
-        search_term = " ".join(search_words)
-        
-        sparql_query = f"""
-        SELECT ?item ?itemLabel ?itemDescription WHERE {{
-          ?item rdfs:label ?itemLabel .
-          FILTER(LANG(?itemLabel) = "{lang}" && CONTAINS(LCASE(?itemLabel), LCASE("{search_term}")))
-          OPTIONAL {{ ?item schema:description ?itemDescription . FILTER(LANG(?itemDescription) = "{lang}") }}
-        }}
-        LIMIT 1
-        """
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/sparql-results+json"
-        }
-        
-        response = requests.get(
-            sparql_url,
-            params={"query": sparql_query, "format": "json"},
-            headers=headers,
-            timeout=5  # 타임아웃을 5초로 단축 (빠른 실패)
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            results = data.get("results", {}).get("bindings", [])
-            
-            if results:
-                result = results[0]
-                item_label = result.get("itemLabel", {}).get("value", query)
-                item_desc = result.get("itemDescription", {}).get("value", "")
-                
-                print(f"✅ Wikidata ({lang_name}) 항목 찾음: '{item_label}'")
-                return {
-                    "source": "Wikidata",
-                    "title": item_label,
-                    "extract": item_desc,
-                    "item_id": result.get("item", {}).get("value", ""),
-                    "verified": True,
-                    "confidence": 0.88
-                }
-        
-        print(f"⚠️ Wikidata ({lang_name}) 검색 결과 없음")
-        return None
-        
-    except requests.exceptions.Timeout:
-        print(f"❌ Wikidata 검색 타임아웃")
-        return None
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Wikidata 네트워크 오류: {e}")
-        return None
-    except Exception as e:
-        print(f"❌ Wikidata 검색 실패: {e}")
-        return None
-
-
-def search_dbpedia(query, lang='ko'):
-    """DBpedia SPARQL 검색 (한국어/영어 지원)"""
-    try:
-        import requests
-        
-        # LLM이 추출한 키워드 또는 원본 질문을 그대로 사용
-        search_query = query
-        lang_name = "한국어" if lang == 'ko' else "영어"
-        print(f"🔍 DBpedia ({lang_name}) 검색 시작: '{search_query}'")
-        
-        # DBpedia SPARQL 엔드포인트
-        sparql_url = "https://dbpedia.org/sparql"
-        
-        # 검색어를 안전하게 이스케이프
-        search_query_escaped = search_query.replace('"', '\\"')
-        
-        # 최적화된 간단한 검색 쿼리 (타임아웃 방지)
-        # 검색어를 단어로 분리하여 더 빠른 검색
-        search_words = search_query_escaped.split()[:2]  # 최대 2개 단어만 사용
-        search_term = " ".join(search_words)
-        
-        # 한국어/영어 레이블 검색 (abstract가 없어도 label만으로 반환)
-        sparql_query = f"""
-        SELECT ?resource ?label ?abstract WHERE {{
-          ?resource rdfs:label ?label .
-          FILTER(LANG(?label) = "{lang}" && CONTAINS(LCASE(?label), LCASE("{search_term}")))
-          OPTIONAL {{ ?resource dbo:abstract ?abstract . FILTER(LANG(?abstract) = "{lang}") }}
-        }}
-        LIMIT 1
-        """
-        
-        headers = {
-            "Accept": "application/sparql-results+json",
-            "User-Agent": "Mozilla/5.0"
-        }
-        
-        response = requests.get(
-            sparql_url,
-            params={"query": sparql_query, "format": "json"},
-            headers=headers,
-            timeout=5  # 타임아웃을 5초로 단축 (빠른 실패)
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            results = data.get("results", {}).get("bindings", [])
-            
-            if results:
-                result = results[0]
-                label = result.get("label", {}).get("value", query)
-                abstract = result.get("abstract", {}).get("value", "")
-                
-                if not abstract:
-                    abstract = f"{label}에 대한 정보입니다." if lang == 'ko' else f"Information about {label}."
-                
-                print(f"✅ DBpedia ({lang_name}) 항목 찾음: '{label}'")
-                return {
-                    "source": "DBpedia",
-                    "title": label,
-                    "extract": abstract,
-                    "resource": result.get("resource", {}).get("value", ""),
-                    "verified": True,
-                    "confidence": 0.87
-                }
-        
-        print(f"⚠️ DBpedia ({lang_name}) 검색 결과 없음")
-        return None
-        
-    except requests.exceptions.Timeout:
-        print(f"❌ DBpedia 검색 타임아웃")
-        return None
-    except requests.exceptions.RequestException as e:
-        print(f"❌ DBpedia 네트워크 오류: {e}")
-        return None
-    except Exception as e:
-        print(f"❌ DBpedia 검색 실패: {e}")
-        return None
-
-
-def get_best_verification_source(query):
-    """여러 검증 소스 중 가장 좋은 하나 선택
-    
-    우선순위:
-    1. Wikipedia (confidence: 0.9) - 한국어 먼저, 실패 시 영어
-    2. Wikidata (confidence: 0.88) - 한국어 먼저, 실패 시 영어 (Wikipedia 실패 시만)
-    3. DBpedia (confidence: 0.87) - 한국어 먼저, 실패 시 영어 (Wikipedia 실패 시만)
-    4. DuckDuckGo Instant Answer (confidence: 0.85) (Wikipedia 실패 시만)
-    
-    Returns:
-        가장 신뢰할 수 있는 검증 결과 또는 None
-    """
-    print(f"\n🔍 다중 검증 소스 검색 시작: '{query}'")
-    
-    # 모든 검증 소스 병렬 검색
-    results = []
-    
-    # Wikipedia 검색 (한국어 먼저, 실패 시 영어)
-    wiki_result = quick_wikipedia_search(query, lang='ko')
-    if not wiki_result:
-        print(f"   한국어 Wikipedia 실패, 영어 Wikipedia 시도...")
-        wiki_result = quick_wikipedia_search(query, lang='en')
-    if wiki_result:
-        results.append(wiki_result)
-        print(f"✅ Wikipedia 검색 성공! 다른 소스는 건너뜁니다.")
-        # Wikipedia가 성공하면 가장 신뢰도가 높으므로 바로 반환
-        results.sort(key=lambda x: x.get("confidence", 0), reverse=True)
-        best_result = results[0]
-        print(f"\n✅ 최적 검증 소스 선택: {best_result['source']} (신뢰도: {best_result.get('confidence', 0):.2f})")
-        return best_result
-    
-    # Wikipedia 실패 시에만 다른 소스 시도
-    print(f"⚠️ Wikipedia 검색 실패, 다른 검증 소스 시도...")
-    
-    # Wikidata 검색 (한국어 먼저, 실패 시 영어) - 타임아웃 짧게
-    try:
-        wikidata_result = search_wikidata(query, lang='ko')
-        if not wikidata_result:
-            print(f"   한국어 Wikidata 실패, 영어 Wikidata 시도...")
-            wikidata_result = search_wikidata(query, lang='en')
-        if wikidata_result:
-            results.append(wikidata_result)
-    except Exception as e:
-        print(f"⚠️ Wikidata 검색 중 오류 발생, 건너뜁니다: {e}")
-    
-    # DBpedia 검색 (한국어 먼저, 실패 시 영어) - 타임아웃 짧게
-    try:
-        dbpedia_result = search_dbpedia(query, lang='ko')
-        if not dbpedia_result:
-            print(f"   한국어 DBpedia 실패, 영어 DBpedia 시도...")
-            dbpedia_result = search_dbpedia(query, lang='en')
-        if dbpedia_result:
-            results.append(dbpedia_result)
-    except Exception as e:
-        print(f"⚠️ DBpedia 검색 중 오류 발생, 건너뜁니다: {e}")
-    
-    # DuckDuckGo Instant Answer 검색
-    try:
-        ddg_result = search_duckduckgo_instant_answer(query)
-        if ddg_result:
-            results.append(ddg_result)
-    except Exception as e:
-        print(f"⚠️ DuckDuckGo 검색 중 오류 발생, 건너뜁니다: {e}")
-    
-    if not results:
-        print(f"⚠️ 모든 검증 소스에서 결과 없음")
-        return None
-    
-    # Confidence 기준으로 정렬 (높은 순)
-    results.sort(key=lambda x: x.get("confidence", 0), reverse=True)
-    
-    best_result = results[0]
-    print(f"\n✅ 최적 검증 소스 선택: {best_result['source']} (신뢰도: {best_result.get('confidence', 0):.2f})")
-    
-    if len(results) > 1:
-        print(f"   다른 검증 소스: {', '.join([r['source'] for r in results[1:]])}")
-    
-    return best_result
 
 
 def get_premium_models_to_call(currently_used_models):
@@ -1146,6 +682,85 @@ def is_sentence_in_response(sentence, original_response, threshold=0.85):
     return match_ratio >= 0.8
 
 
+def _build_judge_prompt(user_question, llm_responses, llm_sentences, wikipedia_info):
+    """Judge 모델용 프롬프트 생성"""
+    model_sections = [f"[{name} 원본]\n{(r[:800] + '...' if len(r) > 800 else r)}" 
+                     for name, r in llm_responses.items()]
+    sentences_sections = [f"[{name} 문장 목록 - 이 문장만 사용 가능]\n" + 
+                         "\n".join([f"  {i+1}. {s}" for i, s in enumerate(sentences)])
+                         for name, sentences in llm_sentences.items()]
+    wikipedia_section = ""
+    if wikipedia_info:
+        source_name = wikipedia_info.get('source', '검증 소스')
+        wikipedia_section = f"""
+
+**🌐 {source_name} 검증 결과 (공식 정보):**
+제목: {wikipedia_info['title']}
+내용: {wikipedia_info['extract'][:500]}
+
+**🚨 {source_name} 검증 기준:**
+- {source_name} 정보와 **일치하는 AI 답변만 채택**
+- {source_name} 정보와 **불일치하는 AI 답변은 제외**
+- 각 AI의 채택/제외 판단 시 {source_name}을 기준으로 판단하세요
+
+
+"""
+    sentences_text = "\n\n".join(sentences_sections)
+    model_responses_text = "\n\n".join(model_sections)
+    wiki_used = True if wikipedia_info else False
+    
+    return f"""질문: {user_question}
+
+**🚨 핵심 규칙 (반드시 준수):**
+1. **아래 "문장 목록"에 있는 문장만 사용** - 새로운 문장 생성 절대 금지
+2. **각 AI의 문장은 해당 AI의 목록에서만 선택** - 다른 AI 문장 가져오기 금지
+3. **채택/제외 정보는 해당 AI의 원본 문장을 그대로 복사**
+4. **검증 소스 정보가 있으면 해당 소스를 기준으로 채택/제외 판단**
+
+{sentences_text}
+{wikipedia_section}
+
+**원본 답변 (참고용):**
+{model_responses_text}
+
+**verification_results 작성 규칙:**
+
+각 AI마다:
+```json
+"AI모델명": {{
+  "accuracy": "정확성 (검증 소스와 일치하면 '정확', 불일치하면 '부정확')",
+  "errors": "오류 설명 (검증 소스 불일치 시 명시)",
+  "confidence": "0-100",
+  "adopted_info": ["해당 AI 문장 목록에서 검증 소스와 일치하는 원문"],
+  "rejected_info": ["해당 AI 문장 목록에서 검증 소스와 불일치하는 원문"]
+}}
+```
+
+**🚨 절대 규칙:**
+1. **해당 AI의 문장 목록에 있는 문장만 복사** - 한 글자도 바꾸지 마세요
+2. **다른 AI의 문장 절대 복사 금지**
+3. **새로운 문장 생성 금지**
+4. **검증 소스 정보가 있으면 반드시 해당 소스 기준으로 판단**
+
+**optimal_answer:**
+- **반드시 최적의 답변을 생성해야 합니다!**
+- 검증 소스 정보가 있으면 검증 소스 내용을 기반으로 답변 생성
+- 검증 소스 정보와 일치하는 AI 문장들을 조합하여 답변 생성
+- 검증 소스 정보가 없으면 여러 AI 공통 정보 우선
+- **절대 "없습니다", "없음" 같은 빈 답변을 반환하지 마세요!**
+- **최소 100자 이상의 의미 있는 답변을 생성하세요!**
+
+JSON 형식으로만 응답:
+{{
+  "optimal_answer": "검증 소스 기준으로 검증된 문장 조합",
+  "verification_results": {{"모든 AI 검증 결과"}},
+  "confidence_score": "0-100",
+  "contradictions_detected": [],
+  "fact_verification": {{"wikipedia_used": {wiki_used}}},
+  "analysis_rationale": "검증 소스 검증 결과 및 선택 근거"
+}}"""
+
+
 def extract_valid_sentences(sentence_list, original_response, ai_name):
     """문장 리스트에서 실제로 원본에 포함된 것만 추출"""
     if not sentence_list or not original_response:
@@ -1297,97 +912,7 @@ def judge_and_generate_optimal_response(llm_responses, user_question, judge_mode
                 print(f"⚠️ 추가 호출할 프리미엄 모델 없음 - 기본 Judge 시스템 사용")
         
         # Wikipedia 검증이 있거나 보팅이 불필요한 경우 기존 Judge 시스템 사용
-        # 프롬프트 구성
-        model_sections = []
-        for model_name, response in llm_responses.items():
-            preview = response[:800] + "..." if len(response) > 800 else response
-            model_sections.append(f"[{model_name} 원본]\n{preview}")
-        
-        model_responses_text = "\n\n".join(model_sections)
-        
-        # 문장 목록
-        sentences_sections = []
-        for model_name, sentences in llm_sentences.items():
-            sentences_list = "\n".join([f"  {i+1}. {s}" for i, s in enumerate(sentences)])
-            sentences_sections.append(f"[{model_name} 문장 목록 - 이 문장만 사용 가능]\n{sentences_list}")
-        
-        sentences_text = "\n\n".join(sentences_sections)
-        
-        # Wikipedia 정보 추가
-        wikipedia_section = ""
-        if wikipedia_info:
-            source_name = wikipedia_info.get('source', '검증 소스')
-            wikipedia_section = f"""
-
-**🌐 {source_name} 검증 결과 (공식 정보):**
-제목: {wikipedia_info['title']}
-내용: {wikipedia_info['extract'][:500]}
-
-**🚨 {source_name} 검증 기준:**
-- {source_name} 정보와 **일치하는 AI 답변만 채택**
-- {source_name} 정보와 **불일치하는 AI 답변은 제외**
-- 각 AI의 채택/제외 판단 시 {source_name}을 기준으로 판단하세요
-
-
-"""
-        
-        # Judge 프롬프트
-        judge_prompt = f"""
-질문: {user_question}
-
-**🚨 핵심 규칙 (반드시 준수):**
-1. **아래 "문장 목록"에 있는 문장만 사용** - 새로운 문장 생성 절대 금지
-2. **각 AI의 문장은 해당 AI의 목록에서만 선택** - 다른 AI 문장 가져오기 금지
-3. **채택/제외 정보는 해당 AI의 원본 문장을 그대로 복사**
-4. **검증 소스 정보가 있으면 해당 소스를 기준으로 채택/제외 판단**
-
-{sentences_text}
-{wikipedia_section}
-
-**원본 답변 (참고용):**
-{model_responses_text}
-
-**verification_results 작성 규칙:**
-
-각 AI마다:
-```json
-"AI모델명": {{
-  "accuracy": "정확성 (검증 소스와 일치하면 '정확', 불일치하면 '부정확')",
-  "errors": "오류 설명 (검증 소스 불일치 시 명시)",
-  "confidence": "0-100",
-  "adopted_info": ["해당 AI 문장 목록에서 검증 소스와 일치하는 원문"],
-  "rejected_info": ["해당 AI 문장 목록에서 검증 소스와 불일치하는 원문"]
-}}
-```
-
-**🚨 절대 규칙:**
-1. **해당 AI의 문장 목록에 있는 문장만 복사** - 한 글자도 바꾸지 마세요
-2. **다른 AI의 문장 절대 복사 금지**
-3. **새로운 문장 생성 금지**
-4. **검증 소스 정보가 있으면 반드시 해당 소스 기준으로 판단**
-
-
-
-**optimal_answer:**
-- **반드시 최적의 답변을 생성해야 합니다!**
-- 검증 소스 정보가 있으면 검증 소스 내용을 기반으로 답변 생성
-- 검증 소스 정보와 일치하는 AI 문장들을 조합하여 답변 생성
-- 검증 소스 정보가 없으면 여러 AI 공통 정보 우선
-- **절대 "없습니다", "없음" 같은 빈 답변을 반환하지 마세요!**
-- **최소 100자 이상의 의미 있는 답변을 생성하세요!**
-
-JSON 형식으로만 응답:
-{{
-  "optimal_answer": "검증 소스 기준으로 검증된 문장 조합",
-  "verification_results": {{
-    "모든 AI 검증 결과"
-  }},
-  "confidence_score": "0-100",
-  "contradictions_detected": [],
-  "fact_verification": {{"wikipedia_used": {True if wikipedia_info else False}}},
-  "analysis_rationale": "검증 소스 검증 결과 및 선택 근거"
-}}
-"""
+        judge_prompt = _build_judge_prompt(user_question, llm_responses, llm_sentences, wikipedia_info)
         
         print(f"\n📞 심판 모델({judge_model}) 호출...")
         judge_response = call_judge_model(judge_model, judge_prompt)
