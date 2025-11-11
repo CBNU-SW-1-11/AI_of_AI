@@ -20,6 +20,21 @@ from .integrated_chat_service import integrated_chat_service
 from .llm_cache_manager import llm_cache_manager, conversation_context_manager
 from django.utils import timezone
 import threading
+
+# 최적화 관련 함수들을 optimization_service.py에서 import
+from .optimization_service import (
+    extract_text_from_pdf,
+    extract_text_from_pdf_ocr,
+    extract_text_from_image,
+    process_uploaded_file,
+    summarize_content,
+    analyze_image_with_gpt4o_mini,
+    generate_optimal_response_with_ollama,
+    generate_optimal_response,
+)
+
+# 호환성을 위한 별칭 (기존 코드에서 analyze_image_with_ollama를 사용)
+analyze_image_with_ollama = analyze_image_with_gpt4o_mini
 import openai
 import anthropic
 from groq import Groq
@@ -180,8 +195,14 @@ def get_user_friendly_error_message(error: Exception) -> str:
     return "오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
 
 
-# 파일 처리 유틸리티 함수들
-def extract_text_from_pdf(file_content):
+# 파일 처리 유틸리티 함수들 - optimization_service.py로 이동됨
+# extract_text_from_pdf, extract_text_from_pdf_ocr, extract_text_from_image,
+# process_uploaded_file, summarize_content, analyze_image_with_ollama 등은
+# optimization_service.py에서 import하여 사용
+
+# 아래 코드는 제거 예정 (현재는 호환성을 위해 주석 처리)
+"""
+def extract_text_from_pdf_DEPRECATED(file_content):
     """PDF에서 텍스트 추출 (직접 추출 + OCR 백업)"""
     try:
         pdf_file = io.BytesIO(file_content)
