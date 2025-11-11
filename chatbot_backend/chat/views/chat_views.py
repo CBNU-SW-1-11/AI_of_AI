@@ -11,6 +11,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
+from django.core.cache import cache
 import requests
 import hmac
 import hashlib
@@ -160,6 +161,80 @@ class ChatView(APIView):
                 print(f"🎯 심판 모델: {judge_model}")
                 print(f"📝 처리할 메시지 길이: {len(final_message)}자")
                 
+                # 모델 변경 감지 및 대화 히스토리 초기화 처리
+                session_id = request.data.get('user_id', 'default_user')
+                
+                # 모델 이름 매핑 (표시명 -> 내부명)
+                model_name_mapping = {
+                    'GPT-5': 'gpt-5',
+                    'GPT-5-Mini': 'gpt-5-mini',
+                    'GPT-4.1': 'gpt-4.1',
+                    'GPT-4.1-Mini': 'gpt-4.1-mini',
+                    'GPT-4o': 'gpt-4o',
+                    'GPT-4o-Mini': 'gpt-4o-mini',
+                    'GPT-4-Turbo': 'gpt-4-turbo',
+                    'GPT-3.5-Turbo': 'gpt-3.5-turbo',
+                    'Gemini-2.5-Pro': 'gemini-2.5-pro',
+                    'Gemini-2.5-Flash': 'gemini-2.5-flash',
+                    'Gemini-2.0-Flash-Exp': 'gemini-2.0-flash-exp',
+                    'Gemini-2.0-Flash-Lite': 'gemini-2.0-flash-lite',
+                    'Claude-4-Opus': 'claude-4-opus',
+                    'Claude-3.7-Sonnet': 'claude-3.7-sonnet',
+                    'Claude-3.5-Sonnet': 'claude-3.5-sonnet',
+                    'Claude-3.5-Haiku': 'claude-3.5-haiku',
+                    'Claude-3-Opus': 'claude-3-opus',
+                    'HCX-003': 'clova-hcx-003',
+                    'HCX-DASH-001': 'clova-hcx-dash-001',
+                }
+                
+                if selected_models and len(selected_models) > 0:
+                    # 이전 모델 목록 가져오기
+                    previous_models_key = f"previous_models_{session_id}"
+                    previous_models = cache.get(previous_models_key, [])
+                    
+                    # 현재 모델 목록 정규화 (정렬하여 비교)
+                    current_models = sorted([m.strip() for m in selected_models if m])
+                    previous_models_sorted = sorted([m.strip() for m in previous_models if m]) if previous_models else []
+                    
+                    # 모델 변경 여부 확인
+                    if previous_models_sorted:
+                        # 교집합 계산 (공통 모델)
+                        common_models = set(current_models) & set(previous_models_sorted)
+                        
+                        # 모든 모델이 교체되었는지 확인 (교집합이 0개)
+                        all_models_changed = len(common_models) == 0
+                        
+                        if all_models_changed:
+                            print(f"🔄 모든 모델이 교체됨 감지! 대화 히스토리 초기화")
+                            print(f"   이전 모델: {previous_models_sorted}")
+                            print(f"   현재 모델: {current_models}")
+                            print(f"   공통 모델: {list(common_models)} (0개)")
+                            
+                            # 1. ConversationContextManager의 대화 히스토리 초기화
+                            conversation_context_manager.clear_context(session_id)
+                            print(f"   ✅ ConversationContextManager 초기화 완료")
+                            
+                            # 2. 모든 ChatBot 인스턴스의 대화 히스토리 초기화 (이전 + 현재 모든 모델)
+                            all_models_to_clear = set(previous_models_sorted) | set(current_models)
+                            for model_display_name in all_models_to_clear:
+                                bot_name = model_name_mapping.get(model_display_name)
+                                if bot_name and bot_name in chatbots:
+                                    chatbots[bot_name].conversation_history = []
+                                    print(f"   ✅ {model_display_name} ({bot_name}) 대화 히스토리 초기화")
+                            
+                            print(f"✅ 모든 모델의 대화 히스토리 초기화 완료 ({len(all_models_to_clear)}개 모델)")
+                        else:
+                            print(f"✔️ 일부 모델만 변경됨 - 대화 히스토리 유지")
+                            print(f"   이전 모델: {previous_models_sorted}")
+                            print(f"   현재 모델: {current_models}")
+                            print(f"   공통 모델 ({len(common_models)}개): {list(common_models)}")
+                            print(f"   → 1-2개 모델 교체이므로 이전 대화 내용 기억")
+                    else:
+                        print(f"📝 첫 요청 또는 이전 모델 정보 없음")
+                    
+                    # 현재 모델 목록을 캐시에 저장 (다음 요청을 위해)
+                    cache.set(previous_models_key, current_models, 3600)  # 1시간 유지
+                
                 # 1-4단계: 선택된 LLM 병렬 질의 → 심판 모델 검증 → 최적 답변 생성
                 response = None
                 try:
@@ -180,7 +255,25 @@ class ChatView(APIView):
                     else:
                         question_type = detect_question_type_from_content(final_message)
                     
-                    final_result = collect_multi_llm_responses(final_message, judge_model, selected_models, question_type=question_type)
+                    # 모든 모델 교체 여부 확인
+                    all_models_changed = False
+                    if selected_models and len(selected_models) > 0:
+                        previous_models_key = f"previous_models_{session_id}"
+                        previous_models = cache.get(previous_models_key, [])
+                        if previous_models:
+                            current_models_sorted = sorted([m.strip() for m in selected_models if m])
+                            previous_models_sorted = sorted([m.strip() for m in previous_models if m])
+                            common_models = set(current_models_sorted) & set(previous_models_sorted)
+                            all_models_changed = len(common_models) == 0
+                    
+                    final_result = collect_multi_llm_responses(
+                        final_message, 
+                        judge_model, 
+                        selected_models, 
+                        question_type=question_type,
+                        session_id=session_id,
+                        clear_history=all_models_changed
+                    )
                     print(f"✅ 최적 답변 생성 완료: {type(final_result)}")
                     print(f"✅ 최적 답변 결과 키: {list(final_result.keys()) if isinstance(final_result, dict) else 'N/A'}")
                     
@@ -201,8 +294,7 @@ class ChatView(APIView):
                     print(f"✅ 결과 포맷팅 완료: {len(response) if response else 0}자")
                     print(f"✅ 포맷팅된 응답 미리보기: {response[:500] if response else 'None'}...")
                     
-                    # 대화 맥락에 추가
-                    session_id = request.data.get('user_id', 'default_user')
+                    # 대화 맥락에 추가 (session_id는 위에서 이미 선언됨)
                     conversation_context_manager.add_conversation(
                         session_id=session_id,
                         user_message=final_message,

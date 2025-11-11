@@ -198,14 +198,44 @@ def quick_wikipedia_search(query):
         return None
 
 
-def collect_multi_llm_responses(user_message, judge_model="GPT-4o", selected_models=None, question_type=None):
-    """1단계: 선택된 LLM들에게 병렬 질의 후 심판 모델로 검증"""
+def collect_multi_llm_responses(user_message, judge_model="GPT-4o", selected_models=None, question_type=None, session_id=None, clear_history=False):
+    """1단계: 선택된 LLM들에게 병렬 질의 후 심판 모델로 검증
+    
+    Args:
+        user_message: 사용자 메시지
+        judge_model: 심판 모델 이름
+        selected_models: 선택된 모델 목록
+        question_type: 질문 유형
+        session_id: 세션 ID (히스토리 관리용)
+        clear_history: 히스토리 초기화 여부
+    """
     import asyncio
     import aiohttp
     import json
     import time
     
     responses = {}
+    
+    # 히스토리 초기화가 필요한 경우 각 모델의 히스토리 초기화
+    if clear_history and selected_models:
+        from ..utils.chatbot import chatbots
+        model_name_mapping = {
+            'GPT-5': 'gpt-5', 'GPT-5-Mini': 'gpt-5-mini',
+            'GPT-4.1': 'gpt-4.1', 'GPT-4.1-Mini': 'gpt-4.1-mini',
+            'GPT-4o': 'gpt-4o', 'GPT-4o-Mini': 'gpt-4o-mini',
+            'GPT-4-Turbo': 'gpt-4-turbo', 'GPT-3.5-Turbo': 'gpt-3.5-turbo',
+            'Gemini-2.5-Pro': 'gemini-2.5-pro', 'Gemini-2.5-Flash': 'gemini-2.5-flash',
+            'Gemini-2.0-Flash-Exp': 'gemini-2.0-flash-exp', 'Gemini-2.0-Flash-Lite': 'gemini-2.0-flash-lite',
+            'Claude-4-Opus': 'claude-4-opus', 'Claude-3.7-Sonnet': 'claude-3.7-sonnet',
+            'Claude-3.5-Sonnet': 'claude-3.5-sonnet', 'Claude-3.5-Haiku': 'claude-3.5-haiku',
+            'Claude-3-Opus': 'claude-3-opus',
+            'HCX-003': 'clova-hcx-003', 'HCX-DASH-001': 'clova-hcx-dash-001',
+        }
+        for model_display_name in selected_models:
+            bot_name = model_name_mapping.get(model_display_name)
+            if bot_name and bot_name in chatbots:
+                chatbots[bot_name].conversation_history = []
+                print(f"   🔄 {model_display_name} ({bot_name}) 히스토리 초기화 (collect_multi_llm_responses)")
     
     # 사용 가능한 LLM 엔드포인트들
     all_llm_endpoints = {
@@ -265,7 +295,7 @@ def collect_multi_llm_responses(user_message, judge_model="GPT-4o", selected_mod
     
     async def fetch_response(session, ai_name, endpoint):
         try:
-            payload = {'message': user_message, 'user_id': 'system'}
+            payload = {'message': user_message, 'user_id': session_id or 'system'}
             async with session.post(endpoint, json=payload, timeout=30) as response:
                 if response.status == 200:
                     result = await response.json()
