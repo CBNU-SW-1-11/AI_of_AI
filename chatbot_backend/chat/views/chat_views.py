@@ -26,7 +26,8 @@ from ..utils.error_handlers import get_user_friendly_error_message
 from ..services.optimal_response import (
     collect_multi_llm_responses,
     format_optimal_response,
-    detect_question_type_from_content
+    detect_question_type_from_content,
+    classify_question_type
 )
 from ..services.video_analysis_service import video_analysis_service
 from ..enhanced_video_chat_handler import get_video_chat_handler
@@ -253,7 +254,22 @@ class ChatView(APIView):
                     elif has_document:
                         question_type = 'document'
                     else:
-                        question_type = detect_question_type_from_content(final_message)
+                        # 일반 질문인 경우, 사실/의견 분류를 위해 classify_question_type 사용
+                        # detect_question_type_from_content는 코드/이미지/문서/창작 감지용
+                        content_type = detect_question_type_from_content(final_message)
+                        if content_type in ['code', 'creative']:
+                            question_type = content_type
+                        else:
+                            # 일반 질문이면 사실/의견 분류 수행
+                            classification_result = classify_question_type(final_message)
+                            if isinstance(classification_result, dict):
+                                question_type = classification_result.get('type', 'factual')
+                                print(f"📝 질문 유형 분류 결과: {question_type}")
+                                if classification_result.get('keywords'):
+                                    print(f"   추출된 검증 키워드: {classification_result.get('keywords')}")
+                            else:
+                                question_type = classification_result
+                                print(f"📝 질문 유형 분류 결과: {question_type}")
                     
                     # 모든 모델 교체 여부 확인
                     all_models_changed = False
@@ -314,7 +330,8 @@ class ChatView(APIView):
                     return Response({
                         'response': response,
                         'analysisData': final_result.get('llm_검증_결과', {}),
-                        'rationale': final_result.get('분석_근거', '')
+                        'rationale': final_result.get('분석_근거', ''),
+                        'verificationSource': final_result.get('검증_소스', None)  # 검증 소스 정보 추가
                     })
                     
                 except Exception as e:
