@@ -16,6 +16,8 @@ import hmac
 import hashlib
 import uuid
 import os
+import logging
+import threading
 
 from chat.serializers import UserSerializer, VideoChatSessionSerializer, VideoChatMessageSerializer, VideoAnalysisCacheSerializer
 from chat.models import VideoChatSession, VideoChatMessage, VideoAnalysisCache, Video, User, SocialAccount
@@ -24,6 +26,8 @@ from ..utils.file_utils import process_uploaded_file, summarize_content
 from ..services.optimal_response import collect_multi_llm_responses, format_optimal_response
 from ..services.video_analysis_service import video_analysis_service
 from ..enhanced_video_chat_handler import get_video_chat_handler
+
+logger = logging.getLogger(__name__)
 
 
 class VideoUploadView(APIView):
