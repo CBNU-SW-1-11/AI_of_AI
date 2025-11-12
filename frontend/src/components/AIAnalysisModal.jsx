@@ -1,9 +1,107 @@
 import React from 'react';
 import { TrendingUp, ThumbsUp, ThumbsDown } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const normalizeModelName = (name) => {
   if (!name) return '';
   return String(name).toLowerCase().replace(/\s+/g, '-').replace(/_+/g, '-');
+};
+
+const normalizeTextList = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map(item => {
+        if (item === null || item === undefined) return '';
+        return String(item).trim();
+      })
+      .filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/\n|,|;/)
+      .map(item => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const buildFallbackRationale = (analysisData, verificationSource) => {
+  const parts = [];
+  const sourceUsed =
+    (verificationSource && (verificationSource.사용됨 ?? verificationSource.used ?? verificationSource.isUsed)) || false;
+
+  const title =
+    (verificationSource && (verificationSource.제목 || verificationSource.title)) ||
+    (verificationSource && verificationSource.source) ||
+    '검증 소스';
+
+  if (sourceUsed) {
+    const sourceName = verificationSource.source || verificationSource.소스;
+    const display = sourceName && sourceName !== title ? `${title} (${sourceName})` : title;
+    parts.push(`${display} 내용을 기준으로 답변을 정리했습니다.`);
+  }
+
+  const adoptedSummary = [];
+
+  if (analysisData && typeof analysisData === 'object') {
+    Object.entries(analysisData).forEach(([modelName, detail]) => {
+      if (!detail || typeof detail !== 'object') return;
+      const adoptedSentences = normalizeTextList(detail.채택된_정보 || detail.adopted || detail.adopted_info);
+      const rejectedSentences = normalizeTextList(detail.제외된_정보 || detail.rejected || detail.rejected_info);
+      const accuracy = typeof detail.정확성 === 'string' ? detail.정확성.trim() : (detail.accuracy || '');
+      const error = (detail.오류 || detail.error || '').toString().trim();
+
+      if (adoptedSentences.length > 0) {
+        adoptedSummary.push({ modelName, sentences: adoptedSentences });
+      } else if (rejectedSentences.length === 0 && error && !parts.some(text => text.includes(modelName))) {
+        parts.push(`${modelName} 응답은 "${error}"로 인해 참고용으로만 사용했습니다.`);
+      } else if (rejectedSentences.length === 0 && accuracy && accuracy.trim() && accuracy.trim() !== '✅') {
+        parts.push(`${modelName} 응답은 "${accuracy.trim()}"로 표시되어 참고용으로만 활용했습니다.`);
+      }
+    });
+  }
+
+  if (adoptedSummary.length > 0) {
+    const uniqueModels = adoptedSummary.map(item => item.modelName);
+    const joinNames = (names) => {
+      if (names.length === 1) return names[0];
+      if (names.length === 2) return `${names[0]}와 ${names[1]}`;
+      return `${names[0]}, ${names[1]} 등 ${names.length}개 모델`;
+    };
+
+    parts.push(`${joinNames(uniqueModels)}의 정보가 검증 소스와 일치하여 채택되었습니다.`);
+
+    const highlightSentences = adoptedSummary
+      .slice(0, 2)
+      .map(item => {
+        const sentence = item.sentences[0];
+        if (!sentence) return null;
+        const cleaned = sentence.replace(/\s+/g, ' ').trim().replace(/["“”]/g, '');
+        const quoted = cleaned.endsWith('.') ? cleaned.slice(0, -1) : cleaned;
+        return `${item.modelName}는 "${quoted}"라고 설명했습니다`;
+      })
+      .filter(Boolean);
+
+    if (highlightSentences.length > 0) {
+      if (highlightSentences.length === 1) {
+        parts.push(`${highlightSentences[0]}.`);
+      } else {
+        parts.push(`${highlightSentences[0]} 그리고 ${highlightSentences[1]}.`);
+      }
+    }
+  }
+
+  if (parts.length === 0) {
+    if (sourceUsed) {
+      parts.push(`${title} 내용을 바탕으로 최적의 답변을 구성했습니다.`);
+    } else {
+      parts.push('여러 모델의 공통 정보를 조합해 최적의 답변을 구성했습니다.');
+    }
+  }
+
+  return parts.join(' ');
 };
 
 // 백엔드 모델 이름을 프론트엔드 모델 ID로 변환
@@ -70,7 +168,9 @@ const AIAnalysisModal = ({ isOpen, onClose, analysisData, selectedModels = [] })
 
   // analysisData 구조 변경에 대응
   let rawAnalysisData = analysisData?.analysisData || analysisData || {};
-  const rationale = analysisData?.rationale || "";
+  const verificationSource = analysisData?.verificationSource || null;
+  const providedRationale = typeof analysisData?.rationale === 'string' ? analysisData.rationale.trim() : '';
+  const rationale = providedRationale || buildFallbackRationale(rawAnalysisData, verificationSource);
 
   // selectedModels를 정규화된 모델 ID로 변환
   const selectedModelSet = new Set((selectedModels || []).map(normalizeModelName));
@@ -213,7 +313,11 @@ const AIAnalysisModal = ({ isOpen, onClose, analysisData, selectedModels = [] })
                       {analysis.adopted.map((item, i) => (
                         <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
                           <span className="text-green-600 mt-0.5 font-bold">✓</span>
-                          <span className="leading-relaxed">{item}</span>
+                          <div className="leading-relaxed prose prose-sm prose-slate">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {item}
+                            </ReactMarkdown>
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -233,7 +337,11 @@ const AIAnalysisModal = ({ isOpen, onClose, analysisData, selectedModels = [] })
                       {analysis.rejected.map((item, i) => (
                         <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
                           <span className="text-red-600 mt-0.5 font-bold">✗</span>
-                          <span className="leading-relaxed">{item}</span>
+                          <div className="leading-relaxed prose prose-sm prose-slate">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {item}
+                            </ReactMarkdown>
+                          </div>
                         </li>
                       ))}
                     </ul>

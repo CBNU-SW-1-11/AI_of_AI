@@ -1528,7 +1528,8 @@ const ChatBox = () => {
                                         setAiAnalysisData({
                                           analysisData: analysisData,
                                           rationale: rationale || "",
-                                          selectedModels: selectedModels
+                                          selectedModels: selectedModels,
+                                          verificationSource: message.verificationSource || null
                                         });
                                         setIsAIAnalysisModalOpen(true);
                                       }}

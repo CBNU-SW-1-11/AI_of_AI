@@ -8,6 +8,132 @@ const ChatContext = createContext();
 const MESSAGES_KEY = "aiofai:messages"; // {conversationId: {modelId: messages[]}}
 const HISTORY_KEY = "aiofai:conversations";
 
+const normalizeTextList = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map(item => {
+        if (item === null || item === undefined) return '';
+        return String(item).trim();
+      })
+      .filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/\n|,|;/)
+      .map(item => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const buildFallbackRationale = (analysisData, verificationSource, optimalAnswer) => {
+  const parts = [];
+  const sourceUsed =
+    (verificationSource && (verificationSource.사용됨 ?? verificationSource.used ?? verificationSource.isUsed)) || false;
+
+  const title =
+    (verificationSource && (verificationSource.제목 || verificationSource.title)) ||
+    (verificationSource && verificationSource.source) ||
+    '검증 소스';
+
+  if (sourceUsed) {
+    const sourceName = verificationSource.source || verificationSource.소스;
+    const display = sourceName && sourceName !== title ? `${title} (${sourceName})` : title;
+    parts.push(`${display} 내용을 기준으로 답변을 정리했습니다.`);
+  }
+
+  const adoptedSummary = [];
+
+  if (analysisData && typeof analysisData === 'object') {
+    Object.entries(analysisData).forEach(([modelName, detail]) => {
+      if (!detail || typeof detail !== 'object') return;
+      const adoptedSentences = normalizeTextList(detail.채택된_정보 || detail.adopted || detail.adopted_info);
+      const rejectedSentences = normalizeTextList(detail.제외된_정보 || detail.rejected || detail.rejected_info);
+      const accuracy = typeof detail.정확성 === 'string' ? detail.정확성.trim() : (detail.accuracy || '');
+      const error = (detail.오류 || detail.error || '').toString().trim();
+
+      if (adoptedSentences.length > 0) {
+        adoptedSummary.push({ modelName, sentences: adoptedSentences });
+      } else if (rejectedSentences.length === 0 && error && !parts.some(text => text.includes(modelName))) {
+        parts.push(`${modelName} 응답은 "${error}"로 인해 참고용으로만 사용했습니다.`);
+      } else if (rejectedSentences.length === 0 && accuracy && accuracy.trim() && accuracy.trim() !== '✅') {
+        parts.push(`${modelName} 응답은 "${accuracy.trim()}"로 표시되어 참고용으로만 활용했습니다.`);
+      }
+    });
+  }
+
+  if (adoptedSummary.length > 0) {
+    const uniqueModels = adoptedSummary.map(item => item.modelName);
+    const joinNames = (names) => {
+      if (names.length === 1) return names[0];
+      if (names.length === 2) return `${names[0]}와 ${names[1]}`;
+      return `${names[0]}, ${names[1]} 등 ${names.length}개 모델`;
+    };
+
+    parts.push(`${joinNames(uniqueModels)}의 정보가 검증 소스와 일치하여 채택되었습니다.`);
+
+    const highlightSentences = adoptedSummary
+      .slice(0, 2)
+      .map(item => {
+        const sentence = item.sentences[0];
+        if (!sentence) return null;
+        const cleaned = sentence.replace(/\s+/g, ' ').trim().replace(/["“”]/g, '');
+        const quoted = cleaned.endsWith('.') ? cleaned.slice(0, -1) : cleaned;
+        return `${item.modelName}는 "${quoted}"라고 설명했습니다`;
+      })
+      .filter(Boolean);
+
+    if (highlightSentences.length > 0) {
+      if (highlightSentences.length === 1) {
+        parts.push(`${highlightSentences[0]}.`);
+      } else {
+        parts.push(`${highlightSentences[0]} 그리고 ${highlightSentences[1]}.`);
+      }
+    }
+  }
+
+  if (parts.length === 0) {
+    if (optimalAnswer && typeof optimalAnswer === 'string' && optimalAnswer.trim()) {
+      parts.push('심판 모델이 검증된 정보를 토대로 직접 최적의 답변을 구성했습니다.');
+    } else if (sourceUsed) {
+      parts.push(`${title} 내용을 바탕으로 최적의 답변을 구성했습니다.`);
+    } else {
+      parts.push('여러 모델의 공통 정보를 조합해 최적의 답변을 구성했습니다.');
+    }
+  }
+
+  return parts.join(' ');
+};
+
+const ensureMessagesHaveRationale = (messages) => {
+  if (!messages || typeof messages !== 'object') return messages;
+
+  const result = {};
+  for (const [modelId, messageArray] of Object.entries(messages)) {
+    if (!Array.isArray(messageArray)) {
+      result[modelId] = messageArray;
+      continue;
+    }
+
+    result[modelId] = messageArray.map(msg => {
+      if (!msg || msg.isUser || msg.isError) return msg;
+      if (modelId !== 'optimal') return msg;
+      const existing = typeof msg.rationale === 'string' ? msg.rationale.trim() : '';
+      const fallback = buildFallbackRationale(msg.analysisData, msg.verificationSource, msg.text);
+      const finalRationale = existing || fallback;
+
+      return {
+        ...msg,
+        rationale: finalRationale,
+        verificationSource: msg.verificationSource ?? null
+      };
+    });
+  }
+
+  return result;
+};
+
 export const ChatProvider = ({ children, initialModels = [] }) => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -45,7 +171,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
           return acc;
         }, {})
       });
-      setMessages(conversationMessages);
+      setMessages(ensureMessagesHaveRationale(conversationMessages));
 
       // 해당 대화의 AI 모델 복원
       const history = JSON.parse(sessionStorage.getItem(HISTORY_KEY) || '[]');
@@ -63,12 +189,14 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
 
   // 메시지 저장 함수
   const saveMessages = (conversationId, newMessages) => {
-    if (!conversationId) return;
+    const enrichedMessages = ensureMessagesHaveRationale(newMessages);
+
+    if (!conversationId) return enrichedMessages;
     
     console.log('💾 메시지 저장 시도:', {
       conversationId,
-      messageKeys: Object.keys(newMessages),
-      messageCounts: Object.entries(newMessages).reduce((acc, [key, val]) => {
+      messageKeys: Object.keys(enrichedMessages),
+      messageCounts: Object.entries(enrichedMessages).reduce((acc, [key, val]) => {
         acc[key] = Array.isArray(val) ? val.length : 'not array';
         return acc;
       }, {})
@@ -120,7 +248,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
         return optimized;
       };
       
-      const optimizedMessages = optimizeMessages(newMessages);
+      const optimizedMessages = optimizeMessages(enrichedMessages);
       const allMessages = JSON.parse(sessionStorage.getItem(MESSAGES_KEY) || '{}');
       allMessages[conversationId] = optimizedMessages;
       
@@ -160,7 +288,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
           return result;
         };
         
-        const cleanedMessages = aggressiveOptimize(newMessages);
+        const cleanedMessages = aggressiveOptimize(enrichedMessages);
         const cleanedAll = { ...allMessages, [conversationId]: cleanedMessages };
         const cleanedJson = JSON.stringify(cleanedAll);
         const cleanedSize = (new Blob([cleanedJson]).size) / 1024 / 1024;
@@ -177,7 +305,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
       
       // 첫 사용자 메시지 찾기 (모든 모델의 메시지에서 찾기)
       let firstUserMessageObj = null;
-      for (const messageArray of Object.values(newMessages)) {
+      for (const messageArray of Object.values(enrichedMessages)) {
         if (Array.isArray(messageArray)) {
           firstUserMessageObj = messageArray.find(msg => msg && msg.isUser);
           if (firstUserMessageObj) break;
@@ -247,7 +375,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
       try {
         const allMessages = JSON.parse(sessionStorage.getItem(MESSAGES_KEY) || '{}');
         const cleanedMessages = {};
-        for (const [modelId, messageArray] of Object.entries(newMessages)) {
+        for (const [modelId, messageArray] of Object.entries(enrichedMessages)) {
           if (Array.isArray(messageArray)) {
             cleanedMessages[modelId] = messageArray.map(msg => {
               if (msg.files && Array.isArray(msg.files)) {
@@ -275,6 +403,8 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
         console.error('재시도 저장도 실패:', retryError);
       }
     }
+
+    return enrichedMessages;
   };
 
   useEffect(() => {
@@ -516,7 +646,8 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
             hasOptimal: !!newMessages['optimal']
           });
           
-          allMessages[newId] = newMessages;
+          const enrichedNewMessages = ensureMessagesHaveRationale(newMessages);
+          allMessages[newId] = enrichedNewMessages;
           sessionStorage.setItem(MESSAGES_KEY, JSON.stringify(allMessages));
           
           // 히스토리에 새 대화 추가
@@ -531,7 +662,7 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
           
           // 새 대화로 전환 (optimal 메시지 제거 확인)
           setCurrentConversationId(newId);
-          setMessages(newMessages);
+          setMessages(enrichedNewMessages);
           
           // URL 업데이트 및 페이지 이동
           navigate(`/?cid=${newId}`, { replace: true });
@@ -569,8 +700,8 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
         }
       });
       
-      saveMessages(actualConversationId, newMessages);
-      return newMessages;
+      const enriched = saveMessages(actualConversationId, newMessages);
+      return enriched || newMessages;
     });
 
     setIsLoading(true);
@@ -645,8 +776,8 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
               newMessages[modelId] = [];
             }
             newMessages[modelId] = [...newMessages[modelId], aiMessage];
-            saveMessages(actualConversationId, newMessages);
-            return newMessages;
+            const enriched = saveMessages(actualConversationId, newMessages);
+            return enriched || newMessages;
           });
 
           // 해당 모델의 로딩 상태 제거
@@ -713,8 +844,8 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
               newMessages[modelId] = [];
             }
             newMessages[modelId] = [...newMessages[modelId], errorMessage];
-            saveMessages(actualConversationId, newMessages);
-            return newMessages;
+            const enriched = saveMessages(actualConversationId, newMessages);
+            return enriched || newMessages;
           });
           
           // 에러 발생 시에도 로딩 상태 제거
@@ -787,8 +918,8 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
                   }
                   newMessages['_similarityData'][userMessage.id] = analysisResult;
                   console.log('Similarity data saved. Current _similarityData:', newMessages['_similarityData']);
-                  saveMessages(actualConversationId, newMessages);
-                  return newMessages;
+                  const enriched = saveMessages(actualConversationId, newMessages);
+                  return enriched || newMessages;
                 });
               } catch (error) {
                 console.error('유사도 분석 오류:', error);
@@ -1011,25 +1142,29 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
           const formattedResponse = formatOptimalResponse(data.response || data.error || "최적화된 응답을 받았습니다.");
           console.log('Formatted optimal response:', formattedResponse);
 
+          const fallbackRationale = buildFallbackRationale(data.analysisData, data.verificationSource, formattedResponse);
+          const finalRationale = (typeof data.rationale === 'string' ? data.rationale.trim() : '') || fallbackRationale;
+
           const optimalMessage = {
             text: formattedResponse,
-              isUser: false,
-              timestamp: new Date().toISOString(),
-              id: Date.now() + Math.random() + 'optimal',
-              similarityData: similarityData,
-              // 백엔드에서 받은 분석 데이터 저장
-              analysisData: data.analysisData || null,
-              rationale: data.rationale || null
-            };
+            isUser: false,
+            timestamp: new Date().toISOString(),
+            id: Date.now() + Math.random() + 'optimal',
+            similarityData: similarityData,
+            // 백엔드에서 받은 분석 데이터 저장
+            analysisData: data.analysisData || null,
+            rationale: finalRationale,
+            verificationSource: data.verificationSource || null
+          };
 
-            console.log('✅ OPTIMAL 메시지 생성:', {
-              textLength: optimalMessage.text ? optimalMessage.text.length : 0,
-              textPreview: optimalMessage.text ? optimalMessage.text.substring(0, 100) : 'null'
-            });
+          console.log('✅ OPTIMAL 메시지 생성:', {
+            textLength: optimalMessage.text ? optimalMessage.text.length : 0,
+            textPreview: optimalMessage.text ? optimalMessage.text.substring(0, 100) : 'null'
+          });
 
-            newMessages['optimal'] = [...newMessages['optimal'], optimalMessage];
-            saveMessages(actualConversationId, newMessages);
-            return newMessages;
+          newMessages['optimal'] = [...newMessages['optimal'], optimalMessage];
+          const enrichedMessages = saveMessages(actualConversationId, newMessages);
+          return enrichedMessages || newMessages;
           });
 
           // optimal 로딩 상태 제거
@@ -1102,8 +1237,8 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
               newMessages['optimal'] = [];
             }
             newMessages['optimal'] = [...newMessages['optimal'], errorMessage];
-            saveMessages(actualConversationId, newMessages);
-            return newMessages;
+            const enrichedMessages = saveMessages(actualConversationId, newMessages);
+            return enrichedMessages || newMessages;
           });
 
           // optimal 에러 시에도 로딩 상태 제거
