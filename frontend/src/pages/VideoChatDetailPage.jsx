@@ -280,8 +280,11 @@ const VideoChatDetailPage = () => {
         // 순차적으로 답변 표시
         const aiMessages = [];
         
+        console.log('📋 백엔드 응답 데이터:', response.data.ai_responses);
         if (response.data.ai_responses.individual) {
+          console.log('✅ 개별 AI 응답 수신:', response.data.ai_responses.individual.length, '개');
           response.data.ai_responses.individual.forEach(aiResponse => {
+            console.log(`  - ${aiResponse.model}: ${aiResponse.content?.substring(0, 50)}...`);
             aiMessages.push({
               id: aiResponse.id,
               type: 'ai',
@@ -291,6 +294,8 @@ const VideoChatDetailPage = () => {
               relevant_frames: response.data.relevant_frames || []
             });
           });
+        } else {
+          console.log('⚠️ 개별 AI 응답이 없습니다:', response.data.ai_responses);
         }
         
         // 개별 AI 답변들을 순차적으로 표시
@@ -656,12 +661,25 @@ const VideoChatDetailPage = () => {
                 }
                 // 모델 ID 매핑
                 const getModelKey = (aiModel) => {
-                  if (aiModel?.includes('gpt')) return 'gpt';
-                  if (aiModel?.includes('claude')) return 'claude';
-                  if (aiModel?.includes('gemini')) return 'mixtral'; // Gemini를 Mixtral 탭에 표시
+                  if (!aiModel) return null;
+                  const modelLower = aiModel.toLowerCase();
+                  if (modelLower.includes('gpt')) return 'gpt';
+                  if (modelLower.includes('claude')) return 'claude';
+                  if (modelLower.includes('gemini')) return 'mixtral'; // Gemini를 Mixtral 탭에 표시
                   return aiModel;
                 };
                 const isModelMessage = modelId !== 'optimal' && getModelKey(message.ai_model) === modelId;
+                
+                // 디버깅: 모델 매칭 확인
+                if (message.type === 'ai' && !isUser) {
+                  console.log(`🔍 모델 매칭 체크 [${modelId}]:`, {
+                    ai_model: message.ai_model,
+                    getModelKey: getModelKey(message.ai_model),
+                    modelId,
+                    isModelMessage,
+                    messageType: message.type
+                  });
+                }
                 const isSpecialCommand = message.type === 'ai_optimal' && message.id && message.id.startsWith('special_');
                 
                 if (isSpecialCommand) {

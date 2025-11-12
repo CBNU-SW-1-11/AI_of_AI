@@ -2,10 +2,8 @@
 from .optimal_response import (
     collect_multi_llm_responses,
     detect_conflicts_in_responses,
-    judge_and_generate_optimal_response,
     call_judge_model,
     parse_judge_response,
-    create_fallback_result,
     format_optimal_response,
     classify_question_type,
     detect_question_type_from_content
@@ -26,10 +24,8 @@ __all__ = [
     # Optimal response services
     'collect_multi_llm_responses',
     'detect_conflicts_in_responses',
-    'judge_and_generate_optimal_response',
     'call_judge_model',
     'parse_judge_response',
-    'create_fallback_result',
     'format_optimal_response',
     'classify_question_type',
     'detect_question_type_from_content',

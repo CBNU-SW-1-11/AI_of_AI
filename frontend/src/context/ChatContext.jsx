@@ -986,6 +986,8 @@ export const ChatProvider = ({ children, initialModels = [] }) => {
             responsePreview: data.response ? data.response.substring(0, 100) : 'null',
             hasAnalysisData: !!data.analysisData,
             hasRationale: !!data.rationale,
+            hasVerificationSource: !!data.verificationSource,
+            verificationSource: data.verificationSource,
             fullData: data
           });
           

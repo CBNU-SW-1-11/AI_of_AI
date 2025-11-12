@@ -1524,6 +1524,7 @@ const ChatBox = () => {
                                         console.log('Setting AI analysis data:');
                                         console.log('- analysisData:', JSON.stringify(analysisData, null, 2));
                                         console.log('- rationale:', rationale);
+                                        console.log('- verificationSource:', message.verificationSource);
                                         
                                         setAiAnalysisData({
                                           analysisData: analysisData,

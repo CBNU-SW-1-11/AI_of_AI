@@ -245,6 +245,7 @@ const AIAnalysisModal = ({ isOpen, onClose, analysisData, selectedModels = [] })
   
   console.log('AIAnalysisModal - actualAnalysisData:', JSON.stringify(actualAnalysisData, null, 2));
   console.log('AIAnalysisModal - rationale:', rationale);
+  console.log('AIAnalysisModal - verificationSource:', verificationSource);
   console.log('AIAnalysisModal - Object.keys(actualAnalysisData):', Object.keys(actualAnalysisData));
 
   return (
@@ -266,6 +267,61 @@ const AIAnalysisModal = ({ isOpen, onClose, analysisData, selectedModels = [] })
 
         {/* Content - 스크롤 가능 */}
         <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+          {/* 검증 소스 정보 섹션 */}
+          <div className={`border-2 rounded-lg p-6 shadow-lg ${
+            verificationSource && verificationSource.사용됨 
+              ? 'border-green-400 bg-green-50' 
+              : 'border-gray-300 bg-gray-50'
+          }`}>
+            <h3 className={`text-xl font-bold mb-4 flex items-center ${
+              verificationSource && verificationSource.사용됨 
+                ? 'text-green-900' 
+                : 'text-gray-700'
+            }`}>
+              <TrendingUp className={`mr-3 ${
+                verificationSource && verificationSource.사용됨 
+                  ? 'text-green-600' 
+                  : 'text-gray-500'
+              }`} size={24} />
+              🔍 검증 소스 정보
+            </h3>
+            <div className="bg-white rounded-lg p-4 border shadow-sm space-y-3">
+              {verificationSource && verificationSource.사용됨 ? (
+                <>
+                  <div className="flex items-center gap-3">
+                    <span className="font-semibold text-gray-700">검증 소스:</span>
+                    <span className="px-3 py-1 bg-green-100 text-green-800 rounded-lg font-bold">
+                      {verificationSource.소스 || 'Unknown'}
+                    </span>
+                    {verificationSource.신뢰도 && (
+                      <span className="text-sm text-gray-600">
+                        (신뢰도: {(verificationSource.신뢰도 * 100).toFixed(0)}%)
+                      </span>
+                    )}
+                  </div>
+                  {verificationSource.제목 && (
+                    <div>
+                      <span className="font-semibold text-gray-700">제목: </span>
+                      <span className="text-gray-800">{verificationSource.제목}</span>
+                    </div>
+                  )}
+                  {verificationSource.내용 && (
+                    <div>
+                      <span className="font-semibold text-gray-700">내용: </span>
+                      <p className="text-gray-800 mt-1 leading-relaxed">
+                        {verificationSource.내용}
+                      </p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-gray-600 italic">
+                  검증 소스가 사용되지 않았습니다. (의견 질문이거나 상호모순이 없는 경우)
+                </div>
+              )}
+            </div>
+          </div>
+          
           {/* 분석 근거 섹션 - 강조 표시 */}
           {rationale && (
             <div className="border-2 border-blue-400 rounded-lg p-6 bg-blue-50 shadow-lg">

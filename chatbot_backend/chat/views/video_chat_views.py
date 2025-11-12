@@ -145,8 +145,11 @@ class VideoChatView(APIView):
             
             # AI 개별 응답 저장
             individual_messages = []
+            print(f"🔍 chat_result['individual_responses']: {chat_result.get('individual_responses')}")
             if chat_result.get('individual_responses'):
+                print(f"✅ 개별 응답 {len(chat_result['individual_responses'])}개 발견")
                 for ai_name, ai_content in chat_result['individual_responses'].items():
+                    print(f"  - {ai_name}: {ai_content[:100] if ai_content else 'None'}...")
                     ai_message = VideoChatMessage.objects.create(
                         session=session,
                         message_type='ai',
@@ -155,6 +158,8 @@ class VideoChatView(APIView):
                         parent_message=user_message
                     )
                     individual_messages.append(ai_message)
+            else:
+                print(f"⚠️ individual_responses가 비어있습니다!")
             
             # 통합 응답 저장
             optimal_response = chat_result.get('answer', '')

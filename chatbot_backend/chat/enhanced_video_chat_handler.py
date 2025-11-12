@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 def get_chatbots():
     """chatbots 전역 변수를 가져오는 헬퍼 함수 (lazy import)"""
     try:
-        from . import views
-        return views.chatbots
+        from ..utils.chatbot import chatbots
+        return chatbots
     except Exception as e:
         logger.warning(f"⚠️ chatbots import 실패: {e}")
         return {}
