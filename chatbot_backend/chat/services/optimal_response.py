@@ -8,6 +8,7 @@ import json
 import asyncio
 import aiohttp
 import openai
+from collections import defaultdict
 from difflib import SequenceMatcher
 
 # 로컬 imports
@@ -528,65 +529,127 @@ def collect_multi_llm_responses(user_message, judge_model="GPT-4o", selected_mod
 
 
 def detect_conflicts_in_responses(llm_responses):
-    """LLM 응답에서 상호모순 감지 (향상된 버전)"""
-    from collections import defaultdict
+    """LLM 응답에서 상호모순 감지 (정확도 향상 버전)"""
+    
+    CONTEXT_STOPWORDS = {
+        '그리고', '또한', '그러나', '하지만', '그런데', '그래서', '따라서', '즉', '이후', '최근',
+        '대한', '관련', '기준', '대해', '있는', '없는', '하는', '되는', '것은', '것이', '것을',
+        '것에', '것으로', '것이다', '것입니다', '입니다', '습니다', '있습니다', '됩니다', '합니다',
+        '에서', '에게', '으로', '로', '및', '등', '때', '때문', '위해', '여러', '다양한',
+        '이', '그', '저', '또는', '혹은', '우리', '해당', '이번', '해', '년', '월', '일'
+    }
+    
+    def extract_context_tokens(text, start, end):
+        window = text[max(0, start - 25):min(len(text), end + 25)]
+        tokens = re.findall(r'[A-Za-z가-힣]{2,}', window)
+        keywords = set()
+        for token in tokens:
+            token_norm = token.lower()
+            if token_norm in CONTEXT_STOPWORDS:
+                continue
+            keywords.add(token_norm)
+        return keywords
+    
+    def normalize_numeric_tokens(value):
+        numbers = re.findall(r'\d+(?:\.\d+)?', value)
+        normalized = []
+        for num in numbers:
+            if '.' in num:
+                normalized.append(float(num))
+            else:
+                normalized.append(int(num))
+        return normalized
+    
+    def values_conflict(category, value_a, info_a, value_b, info_b):
+        a_norm = value_a.strip().lower()
+        b_norm = value_b.strip().lower()
+        
+        if not a_norm or not b_norm:
+            return False
+        if a_norm == b_norm:
+            return False
+        if a_norm in b_norm or b_norm in a_norm:
+            return False
+        
+        shared_keywords = info_a["keywords"] & info_b["keywords"]
+        if not shared_keywords:
+            return False
+        
+        if category in {"dates", "numbers"}:
+            nums_a = normalize_numeric_tokens(a_norm)
+            nums_b = normalize_numeric_tokens(b_norm)
+            if nums_a and nums_b:
+                return nums_a != nums_b
+            return False
+        
+        if category == "names":
+            similarity = similarity_ratio(a_norm, b_norm)
+            return similarity < 0.6
+        
+        return False
     
     conflicts = {
-        "dates": defaultdict(list),
-        "locations": defaultdict(list), 
-        "numbers": defaultdict(list),
-        "names": defaultdict(list)
+        "dates": defaultdict(lambda: {"models": set(), "keywords": set()}),
+        "numbers": defaultdict(lambda: {"models": set(), "keywords": set()}),
+        "names": defaultdict(lambda: {"models": set(), "keywords": set()})
     }
     
     for model_name, response in llm_responses.items():
-        # 연도 추출
-        year_matches = re.findall(r'(\d{4})', response)
-        for year_str in year_matches:
+        for match in re.finditer(r'(\d{4})(?:년)?', response):
+            year_str = match.group(1)
             try:
                 year = int(year_str)
-                if 1900 <= year <= 2024:
-                    conflicts["dates"][year_str].append(model_name)
+                if 1000 <= year <= 2100:
+                    entry = conflicts["dates"][year_str]
+                    entry["models"].add(model_name)
+                    entry["keywords"].update(extract_context_tokens(response, match.start(), match.end()))
             except ValueError:
                 continue
         
-        # 위치 추출
-        locations = re.findall(r'[가-힣]+(?:시|도|구|군)', response)
-        for location in locations:
-            conflicts["locations"][location].append(model_name)
+        for match in re.finditer(r'\d+(?:\.\d+)?(?:명|개|월|일|억|만|천|대|년|세|%|cm|mm|kg|g)?', response):
+            value = match.group(0)
+            entry = conflicts["numbers"][value]
+            entry["models"].add(model_name)
+            entry["keywords"].update(extract_context_tokens(response, match.start(), match.end()))
         
-        # 수치 추출
-        numbers = re.findall(r'\d+(?:명|개|월|일|억|만|천|대)', response)
-        for number in numbers:
-            conflicts["numbers"][number].append(model_name)
-        
-        # 이름 추출 (한글 2-4자) - 범용적인 조사/접속사만 필터링
-        names = re.findall(r'[가-힣]{2,4}(?:\([^)]+\))?', response)
-        
-        # 범용적인 한국어 조사/접속사만 필터링 (주제별 하드코딩 제거)
-        # 단일 글자 조사는 이미 2-4자 패턴에서 제외되므로, 2글자 이상의 조사/접속사만 필터링
-        common_particles = {
-            '그리고', '또한', '그러나', '하지만', '그런데', '그래서', '따라서',
-            '때문', '위해', '대해', '관련', '대한', '있는', '없는', '하는', '되는',
-            '것은', '것이', '것을', '것에', '것으로', '것이다', '것입니다',
-            '입니다', '습니다', '있습니다', '됩니다', '합니다',
-            '에서', '에게', '에게서', '으로', '로'
-        }
-        
-        for name in names:
-            # 조사/접속사 제외 및 최소 길이 확인
-            name_clean = name.strip()
-            # 괄호 제거 (예: "이름(별명)" -> "이름")
-            if '(' in name_clean:
-                name_clean = name_clean.split('(')[0].strip()
-            
-            if name_clean and len(name_clean) >= 2 and name_clean not in common_particles:
-                conflicts["names"][name_clean].append(model_name)
+        for match in re.finditer(r'[가-힣]{2,4}(?:\([^)]+\))?', response):
+            name = match.group(0)
+            name_clean = name.split('(')[0].strip()
+            if len(name_clean) < 2:
+                continue
+            entry = conflicts["names"][name_clean]
+            entry["models"].add(model_name)
+            entry["keywords"].update(extract_context_tokens(response, match.start(), match.end()))
     
-    # 2개 이상 다른 값이 있을 때만 모순으로 간주
     detected_conflicts = {}
     for category, items in conflicts.items():
-        if len(items) > 1:
-            detected_conflicts[category] = dict(items)
+        value_infos = []
+        for value, info in items.items():
+            if len(info["models"]) >= 2:
+                value_infos.append((value, info))
+        
+        if len(value_infos) <= 1:
+            continue
+        
+        conflicting_values = {}
+        for i in range(len(value_infos)):
+            value_i, info_i = value_infos[i]
+            models_i = info_i["models"]
+            for j in range(i + 1, len(value_infos)):
+                value_j, info_j = value_infos[j]
+                models_j = info_j["models"]
+                
+                if not models_i.isdisjoint(models_j):
+                    continue
+                
+                if values_conflict(category, value_i, info_i, value_j, info_j):
+                    conflicting_values.setdefault(value_i, models_i)
+                    conflicting_values.setdefault(value_j, models_j)
+        
+        if conflicting_values:
+            detected_conflicts[category] = {
+                value: list(models) for value, models in conflicting_values.items()
+            }
     
     return detected_conflicts
 
@@ -903,6 +966,32 @@ def judge_and_generate_optimal_response(llm_responses, user_question, judge_mode
                     
                     # 보팅 시스템 적용
                     voting_result = apply_voting_system(all_responses, user_question)
+                    
+                    extra_models_used = list(premium_responses.keys())
+                    voting_result["추가_모델_호출"] = {
+                        "사유": "상충 응답 및 검증 소스 부재",
+                        "추가_모델": extra_models_used,
+                        "총_호출": len(extra_models_used),
+                        "기존_모델": list(llm_responses.keys()),
+                        "전체_모델": list(all_responses.keys())
+                    }
+                    
+                    if not voting_result.get("분석_근거"):
+                        voting_summary_models = voting_result.get("보팅_결과", {}).get("득표_모델", [])
+                        total_models = list(dict.fromkeys(all_responses.keys()))
+                        if voting_summary_models:
+                            summary_leads = ', '.join(voting_summary_models[:2])
+                            if len(voting_summary_models) > 2:
+                                summary_leads += " 등"
+                        else:
+                            summary_leads = ', '.join(total_models[:2]) if total_models else "추가 모델"
+                        reason_text = (
+                            f"AI 응답 간 상충이 감지되어 추가적으로 {len(extra_models_used)}개의 프리미엄 모델"
+                            f"({', '.join(extra_models_used)})을 호출했습니다. "
+                            f"결과적으로 {summary_leads} {len(total_models)}개 모델의 합의 내용을 채택했습니다."
+                        )
+                        voting_result["분석_근거"] = reason_text
+                    
                     print(f"\n🏆 보팅 완료: {voting_result['보팅_결과']['득표_모델']}")
                     
                     return voting_result
