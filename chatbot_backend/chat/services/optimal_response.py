@@ -232,7 +232,7 @@ async def call_additional_premium_models(user_message, premium_models, session_i
     async def fetch_response(session, ai_name, endpoint):
         try:
             payload = {'message': user_message, 'user_id': session_id or 'system'}
-            async with session.post(endpoint, json=payload, timeout=30) as response:
+            async with session.post(endpoint, json=payload, timeout=60) as response:
                 if response.status == 200:
                     result = await response.json()
                     response_content = result.get('response', '응답 없음')
@@ -469,7 +469,7 @@ def collect_multi_llm_responses(user_message, judge_model="GPT-4o", selected_mod
     async def fetch_response(session, ai_name, endpoint):
         try:
             payload = {'message': user_message, 'user_id': session_id or 'system'}
-            async with session.post(endpoint, json=payload, timeout=30) as response:
+            async with session.post(endpoint, json=payload, timeout=60) as response:
                 if response.status == 200:
                     result = await response.json()
                     response_content = result.get('response', '응답 없음')

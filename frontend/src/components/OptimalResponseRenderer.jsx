@@ -167,7 +167,8 @@ const FramePreviewList = ({ frames, onFrameClick, maxInitial = FRAME_PREVIEW_LIM
             </>
           )}
         </div>
-        <div className="frame-info">
+        {/* 프레임 정보 숨김 처리 */}
+        {/* <div className="frame-info">
           <span className="frame-timestamp">⏰ {currentFrame.timestamp.toFixed(1)}초</span>
           <span className="frame-score">🎯 {currentFrame.relevance_score}점</span>
         </div>
@@ -186,7 +187,7 @@ const FramePreviewList = ({ frames, onFrameClick, maxInitial = FRAME_PREVIEW_LIM
               📦 객체 {currentFrame.objects.length}개
             </span>
           )}
-        </div>
+        </div> */}
       </div>
     </div>
   );
@@ -342,7 +343,47 @@ const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick, simila
   }
 
   return (
-    <div className="optimal-response-container">
+    <>
+      <style>{`
+        .optimal-response-container .frame-card {
+          border: 1px solid #e5e7eb;
+          border-radius: 8px;
+          padding: 0.75rem;
+          background: rgba(255, 255, 255, 0.8);
+          margin-bottom: 0.5rem;
+        }
+        .optimal-response-container .frame-image {
+          width: 100%;
+          height: 120px;
+          object-fit: cover;
+          border-radius: 4px;
+          margin-bottom: 0.5rem;
+        }
+        .optimal-response-container .frame-info {
+          display: flex;
+          justify-content: space-between;
+          margin-bottom: 0.5rem;
+        }
+        .optimal-response-container .frame-timestamp,
+        .optimal-response-container .frame-score {
+          font-size: 0.75rem;
+          padding: 0.25rem 0.5rem;
+          border-radius: 4px;
+          background: #f3f4f6;
+        }
+        .optimal-response-container .frame-tags {
+          display: flex;
+          gap: 0.25rem;
+          flex-wrap: wrap;
+        }
+        .optimal-response-container .frame-tag {
+          font-size: 0.75rem;
+          padding: 0.25rem 0.5rem;
+          border-radius: 4px;
+          background: #f3f4f6;
+        }
+      `}</style>
+      <div className="optimal-response-container">
       {sections.integrated && (
         <div className="optimal-section integrated-answer">
           <h3 className="section-title">최적 답변</h3>
@@ -414,6 +455,7 @@ const OptimalResponseRenderer = ({ content, relevantFrames, onFrameClick, simila
         />
       )}
     </div>
+    </>
   );
 };
 

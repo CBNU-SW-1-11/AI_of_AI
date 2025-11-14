@@ -107,7 +107,6 @@ class ChatView(APIView):
 사용자 질문: {user_message}
 
 위 PDF 문서의 전체 내용을 바탕으로 사용자의 질문에 정확하고 자세하게 한국어로 답변해주세요.
-문서에 연습 문제가 포함되어 있다면, 그 연습 문제를 찾아서 풀어주세요.
 문서의 모든 내용을 주의 깊게 읽고, 관련된 정보를 모두 포함하여 답변해주세요."""
                         else:
                             # 이미지인 경우 (Ollama가 영어로 분석한 결과를 여러 LLM이 한국어로 답변)
@@ -164,6 +163,32 @@ class ChatView(APIView):
                 
                 # 모델 변경 감지 및 대화 히스토리 초기화 처리
                 session_id = request.data.get('user_id', 'default_user')
+                
+                # 세션이 바뀌었는지 확인 (일반 채팅도 세션별로 초기화)
+                from django.core.cache import cache
+                session_key = f"chat_session_{session_id}"
+                previous_session_id = cache.get(session_key)
+                
+                if previous_session_id is None or previous_session_id != session_id:
+                    # 세션이 바뀌었거나 첫 요청인 경우 - 모든 ChatBot의 대화 기록 초기화
+                    print(f"🔄 일반 채팅 세션 변경 감지! 대화 히스토리 초기화")
+                    print(f"   이전 세션: {previous_session_id}")
+                    print(f"   현재 세션: {session_id}")
+                    
+                    # 모든 ChatBot 인스턴스의 대화 히스토리 초기화
+                    for bot_name, chatbot in chatbots.items():
+                        if hasattr(chatbot, 'conversation_history'):
+                            chatbot.conversation_history = []
+                            print(f"   ✅ {bot_name} 대화 히스토리 초기화")
+                    
+                    # ConversationContextManager도 초기화
+                    conversation_context_manager.clear_context(session_id)
+                    
+                    # 현재 세션 ID를 캐시에 저장
+                    cache.set(session_key, session_id, 3600)  # 1시간 유지
+                    print(f"✅ 모든 ChatBot의 대화 히스토리 초기화 완료")
+                else:
+                    print(f"✔️ 동일한 세션 유지 - 대화 히스토리 유지 (세션: {session_id})")
                 
                 # 모델 이름 매핑 (표시명 -> 내부명)
                 model_name_mapping = {

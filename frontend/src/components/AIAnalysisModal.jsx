@@ -267,7 +267,7 @@ const AIAnalysisModal = ({ isOpen, onClose, analysisData, selectedModels = [] })
 
         {/* Content - 스크롤 가능 */}
         <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-          {/* 검증 소스 정보 섹션 */}
+          {/* 검증 소스 정보 섹션
           <div className={`border-2 rounded-lg p-6 shadow-lg ${
             verificationSource && verificationSource.사용됨 
               ? 'border-green-400 bg-green-50' 
@@ -320,7 +320,7 @@ const AIAnalysisModal = ({ isOpen, onClose, analysisData, selectedModels = [] })
                 </div>
               )}
             </div>
-          </div>
+          </div> */}
           
           {/* 분석 근거 섹션 - 강조 표시 */}
           {rationale && (
@@ -402,7 +402,7 @@ const AIAnalysisModal = ({ isOpen, onClose, analysisData, selectedModels = [] })
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-sm text-gray-500 italic">틀린 정보가 없습니다</p>
+                    <p className="text-sm text-gray-500 italic">제외된 정보가 없습니다</p>
                   )}
                 </div>
               </div>

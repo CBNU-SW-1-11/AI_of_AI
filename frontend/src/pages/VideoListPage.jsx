@@ -480,58 +480,84 @@ const handleDelete = async (video) => {
               {videoList.map((video) => (
                 <div
                   key={video.id}
-                  className="relative bg-white rounded-lg shadow-md p-4 hover:shadow-lg transition-shadow border"
+                  className="relative bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow border"
                 >
-                  <div className="flex items-start mb-3 pr-10">
-                    <FileVideo className="w-8 h-8 mr-3 flex-shrink-0 mt-0.5" style={{ color: BRAND }} />
-                    <div className="flex-1 min-w-0 overflow-hidden">
-                        <h3 className="font-medium text-gray-800 truncate block">
-                        {video.original_name}
+                  {/* 썸네일 이미지 */}
+                  {video.thumbnail_url ? (
+                    <div className="w-full h-48 bg-gray-100 overflow-hidden">
+                      <img
+                        src={`${api.defaults.baseURL}${video.thumbnail_url}`}
+                        alt={video.original_name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          // 이미지 로드 실패 시 아이콘으로 대체
+                          e.target.style.display = 'none';
+                          e.target.parentElement.innerHTML = `
+                            <div class="w-full h-full flex items-center justify-center" style="background-color: #f3f4f6;">
+                              <svg class="w-16 h-16" style="color: ${BRAND}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                              </svg>
+                            </div>
+                          `;
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-full h-48 bg-gray-100 flex items-center justify-center">
+                      <FileVideo className="w-16 h-16" style={{ color: BRAND }} />
+                    </div>
+                  )}
+                  
+                  <div className="p-4">
+                    <div className="flex items-start mb-3 pr-10">
+                      <div className="flex-1 min-w-0 overflow-hidden">
+                        <h3 className="font-medium text-gray-800 truncate block mb-1">
+                          {video.original_name}
                         </h3>
                         <p className="text-sm text-gray-500">
-                        {new Date(video.uploaded_at).toLocaleDateString()}
+                          {new Date(video.uploaded_at).toLocaleDateString()}
                         </p>
+                      </div>
                     </div>
-                    </div>
-                  {/* 더보기 (…) 버튼 */}
-                <button
-                type="button"
-                aria-label="더보기"
-                className="absolute top-3 right-3 p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-200"
-                onClick={(e) => {
-                    e.stopPropagation();
-                    setMenuOpenId(menuOpenId === video.id ? null : video.id);
-                }}
-                >
-                <EllipsisVertical className="w-5 h-5" style={{ color: '#6b7280' }} />
-                </button>
+                    {/* 더보기 (…) 버튼 */}
+                    <button
+                      type="button"
+                      aria-label="더보기"
+                      className="absolute top-3 right-3 p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMenuOpenId(menuOpenId === video.id ? null : video.id);
+                      }}
+                    >
+                      <EllipsisVertical className="w-5 h-5" style={{ color: '#6b7280' }} />
+                    </button>
 
-                {/* 드롭다운 메뉴 */}
-                {menuOpenId === video.id && (
-                <div
-                    ref={menuRef}
-                    className="absolute top-10 right-3 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-20 overflow-hidden"
-                    onClick={(e) => e.stopPropagation()}
-                    role="menu"
-                >
-                    <button
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-black-50 flex items-center gap-2"
-                    onClick={() => handleRename(video)}
-                    role="menuitem"
-                    >
-                    <Pencil className="w-4 h-4 text-black-600" />
-                    <span>이름 수정</span>
-                    </button>
-                    <button
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-black-50 flex items-center gap-2"
-                    onClick={() => handleDelete(video)}
-                    role="menuitem"
-                    >
-                    <Trash2 className="w-4 h-4 text-black-600" />
-                    <span>영상 삭제</span>
-                    </button>
-                </div>
-                )}
+                    {/* 드롭다운 메뉴 */}
+                    {menuOpenId === video.id && (
+                      <div
+                        ref={menuRef}
+                        className="absolute top-10 right-3 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-20 overflow-hidden"
+                        onClick={(e) => e.stopPropagation()}
+                        role="menu"
+                      >
+                        <button
+                          className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                          onClick={() => handleRename(video)}
+                          role="menuitem"
+                        >
+                          <Pencil className="w-4 h-4 text-gray-600" />
+                          <span>이름 수정</span>
+                        </button>
+                        <button
+                          className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                          onClick={() => handleDelete(video)}
+                          role="menuitem"
+                        >
+                          <Trash2 className="w-4 h-4 text-gray-600" />
+                          <span>영상 삭제</span>
+                        </button>
+                      </div>
+                    )}
                   <div className="flex items-center justify-between text-sm mb-3">
                     <span className="text-gray-500">
                       {(video.file_size / (1024 * 1024)).toFixed(1)}MB
@@ -624,6 +650,7 @@ const handleDelete = async (video) => {
                         분석 시작
                       </button>
                     )}
+                  </div>
                   </div>
                 </div>
               ))}

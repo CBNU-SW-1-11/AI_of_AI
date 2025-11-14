@@ -185,16 +185,17 @@ class VideoAnalysisService:
             logger.error(f"❌ 상태 동기화 실패: {e}")
             return False
     
-    def _detect_persons_with_yolo(self, frame):
-        """🔥 하이브리드 사람 감지 (YOLO + DeepFace + 색상 분석)"""
+    def _detect_all_objects_with_yolo(self, frame):
+        """🔥 YOLO로 모든 객체 감지 (person 포함)"""
         if not self.yolo_model:
-            return []
+            return [], []
         
         try:
             # YOLO로 객체 감지
             results = self.yolo_model(frame, verbose=False, conf=0.25)
             
             detected_persons = []
+            detected_objects = []
             h, w = frame.shape[:2]
             
             for result in results:
@@ -207,17 +208,17 @@ class VideoAnalysisService:
                         # 클래스 ID를 실제 클래스 이름으로 변환
                         class_name = self.yolo_model.names[int(class_id)]
                         
-                        # person 클래스만 처리
+                        # 바운딩 박스 (픽셀 단위)
+                        x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
+                        
+                        # 바운딩 박스 정규화
+                        normalized_bbox = [
+                            float(x1/w), float(y1/h),
+                            float(x2/w), float(y2/h)
+                        ]
+                        
+                        # person 클래스는 DeepFace 분석 포함
                         if class_name == 'person':
-                            # 바운딩 박스 (픽셀 단위)
-                            x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
-                            
-                            # 바운딩 박스 정규화
-                            normalized_bbox = [
-                                float(x1/w), float(y1/h),
-                                float(x2/w), float(y2/h)
-                            ]
-                            
                             # 사람 영역 추출
                             person_region = frame[y1:y2, x1:x2]
                             
@@ -233,12 +234,27 @@ class VideoAnalysisService:
                                 'clothing_colors': person_analysis['clothing_colors'],
                                 'analysis_source': person_analysis['source']
                             })
+                        else:
+                            # person이 아닌 다른 객체들
+                            detected_objects.append({
+                                'class': class_name,
+                                'class_name': class_name,
+                                'bbox': normalized_bbox,
+                                'confidence': float(conf),
+                                'confidence_level': float(conf),
+                                'analysis_source': 'YOLO'
+                            })
             
-            return detected_persons
+            return detected_persons, detected_objects
             
         except Exception as e:
             logger.warning(f"YOLO 감지 실패: {e}")
-            return []
+            return [], []
+    
+    def _detect_persons_with_yolo(self, frame):
+        """🔥 하이브리드 사람 감지 (YOLO + DeepFace + 색상 분석) - 하위 호환성"""
+        persons, _ = self._detect_all_objects_with_yolo(frame)
+        return persons
     
     def _hybrid_person_analysis(self, person_region, full_frame, bbox):
         """🔥 하이브리드 사람 분석 (DeepFace → GPT-4V 폴백)"""
@@ -661,6 +677,245 @@ JSON만 답변해주세요."""
         except Exception as e:
             logger.warning(f"진행률 업데이트 실패: {e}")
     
+    def reanalyze_objects_only(self, video_id):
+        """기존 캡션 유지하고 YOLO 객체 감지만 재수행"""
+        try:
+            logger.info(f"🔄 Video ID {video_id}: 객체만 재분석 시작 (캡션 유지)")
+            
+            # Video 모델에서 영상 정보 가져오기
+            try:
+                video = Video.objects.get(id=video_id)
+            except Video.DoesNotExist:
+                logger.error(f"❌ 영상을 찾을 수 없습니다: {video_id}")
+                return False
+            
+            # 기존 meta_db.json과 detection_db.json 파일 찾기
+            video_name = video.original_name or video.filename
+            if not video_name:
+                logger.error(f"❌ Video ID {video_id}: 파일명을 찾을 수 없습니다")
+                return False
+            
+            logger.info(f"🔍 Video ID {video_id}: 파일명 '{video_name}'로 검색 중...")
+            
+            # 여러 패턴으로 파일 찾기
+            possible_names = [
+                video_name,  # 원본 파일명 그대로
+                os.path.splitext(video_name)[0],  # 확장자 제거
+            ]
+            
+            # filename에서 타임스탬프 제거한 버전도 시도
+            if 'upload_' in video_name:
+                import re
+                # upload_1234567890_filename.mp4 -> filename.mp4
+                match = re.search(r'upload_\d+_(.+)', video_name)
+                if match:
+                    possible_names.append(match.group(1))
+                # upload_1234567890_upload_1234567890_filename.mp4 -> upload_1234567890_filename.mp4
+                match = re.search(r'upload_\d+_upload_\d+_(.+)', video_name)
+                if match:
+                    possible_names.append(match.group(1))
+            
+            meta_db_path = None
+            detection_db_path = None
+            
+            # 가능한 모든 패턴 시도
+            for name in possible_names:
+                test_meta_path = os.path.join(settings.MEDIA_ROOT, f"{name}-meta_db.json")
+                if os.path.exists(test_meta_path):
+                    meta_db_path = test_meta_path
+                    detection_db_path = os.path.join(settings.MEDIA_ROOT, f"{name}-detection_db.json")
+                    logger.info(f"✅ Meta DB 파일 찾음: {meta_db_path}")
+                    break
+            
+            if not meta_db_path:
+                # glob으로 검색 시도
+                import glob
+                media_dir = settings.MEDIA_ROOT
+                # video_id로 검색 (meta_db.json의 video_id 필드 확인)
+                meta_files = glob.glob(os.path.join(media_dir, f"*-meta_db.json"))
+                for meta_file in meta_files:
+                    try:
+                        with open(meta_file, 'r', encoding='utf-8') as f:
+                            test_data = json.load(f)
+                            if test_data.get('video_id') == video_name or test_data.get('video_id') == os.path.splitext(video_name)[0]:
+                                meta_db_path = meta_file
+                                base_name = os.path.basename(meta_file).replace('-meta_db.json', '')
+                                detection_db_path = os.path.join(media_dir, f"{base_name}-detection_db.json")
+                                logger.info(f"✅ video_id로 Meta DB 파일 찾음: {meta_db_path}")
+                                break
+                    except:
+                        continue
+            
+            if not meta_db_path or not os.path.exists(meta_db_path):
+                logger.error(f"❌ Meta DB 파일을 찾을 수 없습니다. 시도한 패턴: {possible_names}")
+                return False
+            
+            # 기존 meta_db.json 로드
+            with open(meta_db_path, 'r', encoding='utf-8') as f:
+                meta_db = json.load(f)
+            
+            # 기존 detection_db.json 로드 (있으면)
+            detection_db = None
+            if os.path.exists(detection_db_path):
+                with open(detection_db_path, 'r', encoding='utf-8') as f:
+                    detection_db = json.load(f)
+            else:
+                # detection_db가 없으면 기본 구조 생성
+                video_name_base = os.path.splitext(video_name)[0]
+                detection_db = {
+                    "video_id": video_name_base,
+                    "fps": meta_db.get('fps', 30),
+                    "width": meta_db.get('width', 1280),
+                    "height": meta_db.get('height', 720),
+                    "frame": []
+                }
+            
+            frames = meta_db.get('frame', [])
+            logger.info(f"📊 {len(frames)}개 프레임 처리 시작")
+            
+            # 각 프레임에 대해 YOLO 객체 감지 수행
+            for i, frame_meta in enumerate(frames):
+                frame_image_path = frame_meta.get('frame_image_path')
+                if not frame_image_path:
+                    logger.warning(f"프레임 {i+1}: 이미지 경로 없음, 스킵")
+                    continue
+                
+                # 프레임 이미지 로드
+                full_image_path = os.path.join(settings.MEDIA_ROOT, frame_image_path)
+                if not os.path.exists(full_image_path):
+                    logger.warning(f"프레임 {i+1}: 이미지 파일 없음: {full_image_path}")
+                    continue
+                
+                frame_image = cv2.imread(full_image_path)
+                if frame_image is None:
+                    logger.warning(f"프레임 {i+1}: 이미지 로드 실패")
+                    continue
+                
+                # YOLO로 모든 객체 감지
+                detected_persons, detected_objects = self._detect_all_objects_with_yolo(frame_image)
+                
+                # 기존 person 객체는 유지하되, 새로 감지된 객체 추가
+                existing_persons = frame_meta.get('objects', [])
+                existing_person_count = sum(1 for obj in existing_persons if obj.get('class') == 'person')
+                
+                # person 객체 업데이트 (기존 person은 유지, 새로 감지된 person 추가)
+                # 기존 person 객체의 정보(attributes, clothing_colors 등)는 유지
+                updated_objects = []
+                
+                # 기존 person 객체 유지
+                for obj in existing_persons:
+                    if obj.get('class') == 'person':
+                        updated_objects.append(obj)
+                
+                # 새로 감지된 person 객체 추가 (기존에 없던 것만)
+                for person in detected_persons:
+                    # 기존 person과 겹치는지 확인 (bbox 기반)
+                    is_duplicate = False
+                    person_bbox = person.get('bbox', [])
+                    for existing_obj in existing_persons:
+                        if existing_obj.get('class') == 'person':
+                            existing_bbox = existing_obj.get('bbox', [])
+                            # 간단한 겹침 체크 (IoU 계산 생략, 대략적인 위치 비교)
+                            if existing_bbox and person_bbox:
+                                # bbox가 비슷하면 중복으로 간주
+                                if abs(existing_bbox[0] - person_bbox[0]) < 0.1 and abs(existing_bbox[1] - person_bbox[1]) < 0.1:
+                                    is_duplicate = True
+                                    break
+                    
+                    if not is_duplicate:
+                        # person 객체를 meta_db 형식으로 변환
+                        person_meta = {
+                            "class": "person",
+                            "id": len([o for o in updated_objects if o.get('class') == 'person']) + 1,
+                            "bbox": person.get('bbox', [0, 0, 0, 0]),
+                            "confidence": person.get('confidence', 0.0),
+                            "clothing_colors": person.get('clothing_colors', {}),
+                            "analysis_source": person.get('analysis_source', 'unknown'),
+                            "attributes": person.get('attributes', {}),
+                            "scene_context": frame_meta.get('scene_context', {})
+                        }
+                        updated_objects.append(person_meta)
+                
+                # 새로 감지된 기타 객체들 추가
+                for obj in detected_objects:
+                    obj_meta = {
+                        "class": obj.get('class_name', obj.get('class', 'unknown')),
+                        "id": len([o for o in updated_objects if o.get('class') == obj.get('class_name', obj.get('class', 'unknown'))]) + 1,
+                        "bbox": obj.get('bbox', [0, 0, 0, 0]),
+                        "confidence": obj.get('confidence', 0.0),
+                        "analysis_source": obj.get('analysis_source', 'YOLO'),
+                        "attributes": {},
+                        "scene_context": frame_meta.get('scene_context', {})
+                    }
+                    updated_objects.append(obj_meta)
+                
+                # 프레임 메타데이터 업데이트 (캡션은 유지)
+                frame_meta['objects'] = updated_objects
+                
+                # detection_db 업데이트
+                frame_id = frame_meta.get('image_id', i + 1)
+                detection_frame = None
+                for df in detection_db.get('frame', []):
+                    if df.get('image_id') == frame_id:
+                        detection_frame = df
+                        break
+                
+                if not detection_frame:
+                    detection_frame = {
+                        "image_id": frame_id,
+                        "timestamp": frame_meta.get('timestamp', 0),
+                        "objects": []
+                    }
+                    detection_db['frame'].append(detection_frame)
+                
+                # detection_db의 objects 업데이트
+                detection_objects = []
+                
+                # person 객체 그룹화
+                persons = [obj for obj in updated_objects if obj.get('class') == 'person']
+                if persons:
+                    person_object = {
+                        "class": "person",
+                        "num": len(persons),
+                        "max_id": len(persons),
+                        "tra_id": list(range(1, len(persons) + 1)),
+                        "bbox": [p.get('bbox', [0, 0, 0, 0]) for p in persons]
+                    }
+                    detection_objects.append(person_object)
+                
+                # 기타 객체들
+                other_objects = [obj for obj in updated_objects if obj.get('class') != 'person']
+                for obj in other_objects:
+                    obj_info = {
+                        "class": obj.get('class', 'unknown'),
+                        "num": 1,
+                        "max_id": 1,
+                        "tra_id": [1],
+                        "bbox": [obj.get('bbox', [0, 0, 0, 0])]
+                    }
+                    detection_objects.append(obj_info)
+                
+                detection_frame['objects'] = detection_objects
+                
+                if (i + 1) % 5 == 0:
+                    logger.info(f"진행률: {i+1}/{len(frames)} 프레임 완료")
+            
+            # 업데이트된 JSON 파일 저장
+            with open(meta_db_path, 'w', encoding='utf-8') as f:
+                json.dump(meta_db, f, ensure_ascii=False, indent=2, default=self._json_default)
+            
+            with open(detection_db_path, 'w', encoding='utf-8') as f:
+                json.dump(detection_db, f, ensure_ascii=False, indent=2, default=self._json_default)
+            
+            logger.info(f"✅ Video ID {video_id}: 객체 재분석 완료 (캡션 유지)")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Video ID {video_id} 객체 재분석 실패: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
     def analyze_video(self, video_path, video_id):
         """영상 분석 실행"""
         try:
@@ -689,6 +944,11 @@ JSON만 답변해주세요."""
             if not json_file_path:
                 raise Exception("JSON 파일 저장에 실패했습니다")
             
+            # JSON 파일 존재 여부 확인
+            full_json_path = os.path.join(settings.MEDIA_ROOT, json_file_path)
+            if not os.path.exists(full_json_path):
+                raise Exception(f"JSON 파일이 생성되지 않았습니다: {full_json_path}")
+            
             # 분석 결과를 Video 모델에 저장 (더 안전한 방식)
             try:
                 # 데이터베이스에서 최신 상태로 다시 가져오기
@@ -714,11 +974,22 @@ JSON만 답변해주세요."""
                 logger.info(f"✅ JSON 파일 저장: {json_file_path}")
                 logger.info(f"✅ Video 모델 저장 완료: analysis_json_path = {video.analysis_json_path}")
                 
-                # 저장 후 검증
+                # 저장 후 검증 (파일이 있으면 성공으로 처리)
                 video.refresh_from_db()
                 if video.analysis_status != 'completed':
-                    logger.error(f"❌ 상태 저장 검증 실패: {video.analysis_status}")
-                    raise Exception("분석 상태 저장 검증 실패")
+                    # 파일이 있으면 성공으로 재설정
+                    if os.path.exists(full_json_path):
+                        logger.warning(f"⚠️ 상태가 completed가 아니지만 파일이 존재함. 상태를 completed로 재설정: {video.analysis_status}")
+                        video.analysis_status = 'completed'
+                        video.is_analyzed = True
+                        video.analysis_json_path = json_file_path
+                        video.analysis_progress = 100
+                        video.analysis_message = '분석 완료'
+                        video.save()
+                        logger.info(f"✅ 상태 재설정 완료: {video_id}")
+                    else:
+                        logger.error(f"❌ 상태 저장 검증 실패: {video.analysis_status}")
+                        raise Exception("분석 상태 저장 검증 실패")
                 
                 # 🔥 하이브리드 분석 통계 출력
                 logger.info("="*60)
@@ -737,7 +1008,32 @@ JSON만 답변해주세요."""
                 import traceback
                 logger.error(f"❌ 저장 실패 스택: {traceback.format_exc()}")
                 
-                # 저장 실패 시에도 최소한의 상태는 업데이트
+                # 저장 실패 시에도 파일이 있으면 성공으로 처리
+                full_json_path = os.path.join(settings.MEDIA_ROOT, json_file_path)
+                if os.path.exists(full_json_path):
+                    logger.warning(f"⚠️ DB 저장 실패했지만 분석 파일이 존재함. 재시도: {video_id}")
+                    try:
+                        # 재시도
+                        video = Video.objects.get(id=video_id)
+                        video.analysis_status = 'completed'
+                        video.is_analyzed = True
+                        video.analysis_json_path = json_file_path
+                        video.analysis_progress = 100
+                        video.analysis_message = '분석 완료'
+                        video.duration = analysis_result.get('video_summary', {}).get('total_time_span', 0.0)
+                        video.analysis_type = 'enhanced_opencv'
+                        
+                        frame_image_paths = [frame.get('frame_image_path') for frame in analysis_result.get('frame_results', []) if frame.get('frame_image_path')]
+                        if frame_image_paths:
+                            video.frame_images_path = ','.join(frame_image_paths)
+                        
+                        video.save()
+                        logger.info(f"✅ 재시도 성공: {video_id}")
+                        return True
+                    except Exception as retry_error:
+                        logger.error(f"❌ 재시도도 실패: {retry_error}")
+                
+                # 재시도 실패 시 최소한의 상태는 업데이트
                 try:
                     video = Video.objects.get(id=video_id)
                     video.analysis_status = 'failed'
@@ -1292,8 +1588,9 @@ JSON만 답변해주세요."""
                 # 프레임 이미지 저장
                 frame_image_path = self._save_frame_image(video_id, frame, i + 1)
                 
-                # 실제 YOLO 감지 수행
+                # 실제 YOLO 감지 수행 (모든 객체)
                 detected_persons = []
+                detected_objects = []
                 if self.yolo_model and frame_image_path:
                     try:
                         # 저장된 프레임 이미지 로드
@@ -1301,8 +1598,8 @@ JSON만 답변해주세요."""
                         if os.path.exists(frame_image_full_path):
                             frame_image = cv2.imread(frame_image_full_path)
                             if frame_image is not None:
-                                detected_persons = self._detect_persons_with_yolo(frame_image)
-                                logger.info(f"프레임 {i+1}: YOLO로 {len(detected_persons)}명 감지")
+                                detected_persons, detected_objects = self._detect_all_objects_with_yolo(frame_image)
+                                logger.info(f"프레임 {i+1}: YOLO로 person {len(detected_persons)}개, 기타 객체 {len(detected_objects)}개 감지")
                     except Exception as e:
                         logger.warning(f"프레임 {i+1} YOLO 감지 실패: {e}")
                 
@@ -1371,7 +1668,7 @@ JSON만 답변해주세요."""
                     'frame_image_path': frame_image_path,  # 프레임 이미지 경로 추가
                     'dominant_colors': frame.get('dominant_colors', []),  # 색상 분석 결과 추가
                     'persons': detected_persons,
-                    'objects': [],
+                    'objects': detected_objects,  # 모든 객체 포함
                     'scene_attributes': {
                         'scene_type': 'outdoor' if frame['brightness'] > 120 else 'indoor',
                         'lighting': 'bright' if frame['brightness'] > 150 else 'normal' if frame['brightness'] > 100 else 'dark',
@@ -1757,8 +2054,81 @@ JSON만 답변해주세요."""
             logger.error(f"❌ Vision 캡션 생성 실패: {e}")
             return None
     
+    def _get_available_ollama_vision_models(self):
+        """설치된 Ollama 비전 모델 목록 가져오기"""
+        try:
+            import ollama
+            # Ollama API로 설치된 모델 목록 가져오기
+            models_response = ollama.list()
+            available_models = []
+            
+            # 비전 모델 키워드
+            vision_keywords = ['llava', 'vision']
+            
+            # ollama.list() 반환 형식 확인 및 처리
+            # ollama.list()는 models 속성을 가진 객체를 반환
+            if hasattr(models_response, 'models'):
+                # 모델 리스트가 있는 경우
+                models_list = models_response.models
+            elif isinstance(models_response, dict) and 'models' in models_response:
+                # 딕셔너리 형식인 경우
+                models_list = models_response['models']
+            elif isinstance(models_response, list):
+                # 리스트 형식인 경우
+                models_list = models_response
+            else:
+                models_list = []
+            
+            # 비전 모델 필터링
+            for model in models_list:
+                # ollama.list()는 Model 객체를 반환하며, model 속성에 이름이 있음
+                if hasattr(model, 'model'):
+                    model_name = model.model
+                elif hasattr(model, 'name'):
+                    model_name = model.name
+                elif isinstance(model, dict):
+                    model_name = model.get('model') or model.get('name', '')
+                else:
+                    model_name = str(model)
+                
+                if not model_name:
+                    continue
+                    
+                model_name_lower = model_name.lower()
+                # 비전 모델인지 확인
+                if any(keyword in model_name_lower for keyword in vision_keywords):
+                    available_models.append(model_name)
+            
+            # 기본 모델 목록 (fallback)
+            if not available_models:
+                logger.warning("⚠️ Ollama 비전 모델을 찾을 수 없음, 기본 모델 사용")
+                available_models = ['llava:latest', 'llama3.2-vision:latest']
+            
+            # 우선순위 정렬: llava > llama3.2-vision
+            priority_order = ['llava:llama3.1', 'llava:13b', 'llava:7b', 'llava:latest', 'llama3.2-vision:latest']
+            sorted_models = []
+            
+            # 우선순위에 따라 정렬
+            for priority_model in priority_order:
+                for available in available_models:
+                    if available == priority_model:
+                        if available not in sorted_models:
+                            sorted_models.append(available)
+            
+            # 나머지 모델 추가 (우선순위에 없는 모델들)
+            for available in available_models:
+                if available not in sorted_models:
+                    sorted_models.append(available)
+            
+            logger.info(f"✅ 사용 가능한 Ollama 비전 모델: {sorted_models}")
+            return sorted_models if sorted_models else ['llava:latest']
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Ollama 모델 목록 확인 실패: {e}, 기본 모델 사용")
+            return ['llava:latest', 'llama3.2-vision:latest']
+    
     def _generate_ollama_caption(self, image_path, frame_data):
-        """Ollama Vision 모델을 사용한 캡션 생성 (llava)"""
+        """Ollama Vision 모델을 사용한 캡션 생성 (설치된 모델만 사용)"""
         try:
             import ollama
             
@@ -1788,24 +2158,41 @@ Example: "A bustling city sidewalk with 5 people walking. An elderly woman in a 
 
 Caption:"""
             
-            # Ollama로 이미지 분석
-            response = ollama.chat(
-                model='llava:7b',  # 이미지/PDF 채팅에서 사용하는 동일 모델
-                messages=[
-                    {
-                        'role': 'user',
-                        'content': prompt,
-                        'images': [image_path]  # 이미지 경로 직접 전달
-                    }
-                ],
-                options={
-                    'temperature': 0.7,
-                    'num_predict': 150,  # 간결한 캡션 (약 100-150 단어)
-                    'num_ctx': 2048
-                }
-            )
+            # 설치된 Ollama 비전 모델만 사용
+            available_models = self._get_available_ollama_vision_models()
+            caption = None
+            last_error = None
             
-            caption = response['message']['content'].strip()
+            for model_name in available_models:
+                try:
+                    response = ollama.chat(
+                        model=model_name,
+                        messages=[
+                            {
+                                'role': 'user',
+                                'content': prompt,
+                                'images': [image_path]  # 이미지 경로 직접 전달
+                            }
+                        ],
+                        options={
+                            'temperature': 0.7,
+                            'num_predict': 150,  # 간결한 캡션 (약 100-150 단어)
+                            'num_ctx': 2048
+                        }
+                    )
+                    
+                    caption = response['message']['content'].strip()
+                    logger.info(f"✅ Ollama 캡션 생성 성공 ({model_name}): {caption[:50]}...")
+                    break  # 성공하면 루프 종료
+                    
+                except Exception as e:
+                    last_error = e
+                    logger.warning(f"⚠️ {model_name} 모델 실패, 다음 모델 시도: {e}")
+                    continue
+            
+            if not caption:
+                logger.error(f"❌ 모든 Ollama 모델 실패: {last_error}")
+                return None
             
             # 너무 긴 캡션은 자르기 (300자로 증가)
             if len(caption) > 300:
@@ -1814,7 +2201,6 @@ Caption:"""
             # 통계 업데이트
             self.stats['ollama_calls'] += 1
             
-            logger.info(f"✅ Ollama 캡션 생성 성공: {caption}")
             return caption
             
         except Exception as e:

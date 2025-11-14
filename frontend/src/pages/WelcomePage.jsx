@@ -31,7 +31,6 @@ const WelcomePage = ({ onStartChat }) => {
       { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', description: 'GPT-4.1 경량 버전', price: 'medium' },
       { id: 'gpt-4o', name: 'GPT-4o', description: 'OpenAI의 옴니 모델', price: 'expensive' },
       { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: '경량화된 고성능 모델', price: 'cheap' },
-      { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'GPT-4 터보 버전', price: 'expensive' },
       { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: '빠르고 효율적인 모델', price: 'cheap' },
     ],
   };

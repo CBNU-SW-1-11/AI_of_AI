@@ -18,6 +18,7 @@ import uuid
 import os
 import logging
 import threading
+import json
 
 from chat.serializers import UserSerializer, VideoChatSessionSerializer, VideoChatMessageSerializer, VideoAnalysisCacheSerializer
 from chat.models import VideoChatSession, VideoChatMessage, VideoAnalysisCache, Video, User, SocialAccount
@@ -180,6 +181,72 @@ class VideoListView(APIView):
                     actual_analysis_status = 'failed'
                     print(f"⚠️ 영상 {video.id}: analysis_status는 completed이지만 analysis_json_path가 없음")
                 
+                # 썸네일 이미지 경로 찾기
+                thumbnail_url = None
+                if video.analysis_status == 'completed':
+                    try:
+                        media_dir = settings.MEDIA_ROOT
+                        
+                        # enhanced_video_chat_handler와 동일한 로직으로 meta_db.json 찾기
+                        meta_db_path = None
+                        
+                        # 1순위: filename에서 원본 파일명 추출
+                        if video.filename:
+                            filename_base = os.path.splitext(video.filename)[0]
+                            if filename_base.startswith('upload_') and '_upload_' in filename_base:
+                                parts = filename_base.split('_upload_', 1)
+                                if len(parts) == 2:
+                                    possible_original = f"upload_{parts[1]}.mp4"
+                                    test_path = os.path.join(media_dir, f"{possible_original}-meta_db.json")
+                                    if os.path.exists(test_path):
+                                        meta_db_path = test_path
+                        
+                        # 2순위: original_name 사용
+                        if not meta_db_path and video.original_name:
+                            original_base = os.path.splitext(video.original_name)[0]
+                            test_path = os.path.join(media_dir, f"{original_base}-meta_db.json")
+                            if os.path.exists(test_path):
+                                meta_db_path = test_path
+                        
+                        # 3순위: media 디렉토리에서 video_id 기반 검색
+                        if not meta_db_path:
+                            import glob
+                            meta_db_files = glob.glob(os.path.join(media_dir, "*-meta_db.json"))
+                            # video_id가 포함된 파일 찾기 (간접적으로)
+                            for meta_file in meta_db_files:
+                                try:
+                                    with open(meta_file, 'r', encoding='utf-8') as f:
+                                        meta_data = json.load(f)
+                                        # video_id 확인 (간접적으로)
+                                        frames = meta_data.get('frame', [])
+                                        if frames:
+                                            first_frame = frames[0]
+                                            frame_path = first_frame.get('frame_image_path', '')
+                                            if f'video{video.id}_frame' in frame_path:
+                                                meta_db_path = meta_file
+                                                break
+                                except:
+                                    continue
+                        
+                        # meta_db.json에서 첫 번째 프레임 이미지 가져오기
+                        if meta_db_path and os.path.exists(meta_db_path):
+                            with open(meta_db_path, 'r', encoding='utf-8') as f:
+                                meta_data = json.load(f)
+                                frames = meta_data.get('frame', [])
+                                if frames and len(frames) > 0:
+                                    first_frame = frames[0]
+                                    frame_image_path = first_frame.get('frame_image_path', '')
+                                    if frame_image_path:
+                                        thumbnail_url = f"/media/{frame_image_path.lstrip('/')}"
+                        
+                        # 4순위: video_id로 직접 프레임 이미지 찾기
+                        if not thumbnail_url:
+                            default_thumbnail = os.path.join(media_dir, f"images/video{video.id}_frame1.jpg")
+                            if os.path.exists(default_thumbnail):
+                                thumbnail_url = f"/media/images/video{video.id}_frame1.jpg"
+                    except Exception as e:
+                        logger.warning(f"썸네일 경로 찾기 실패 (video {video.id}): {e}")
+                
                 video_data = {
                     'id': video.id,
                     'filename': video.filename,
@@ -190,7 +257,8 @@ class VideoListView(APIView):
                     'uploaded_at': video.uploaded_at,
                     'file_size': video.file_size,
                     'analysis_progress': video.analysis_progress,  # 진행률 정보 추가
-                    'analysis_message': video.analysis_message or ''  # 분석 메시지 추가
+                    'analysis_message': video.analysis_message or '',  # 분석 메시지 추가
+                    'thumbnail_url': thumbnail_url  # 썸네일 이미지 URL 추가
                 }
                 video_list.append(video_data)
             

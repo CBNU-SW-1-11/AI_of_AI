@@ -16,6 +16,7 @@ import hmac
 import hashlib
 import uuid
 import os
+import logging
 
 from chat.serializers import UserSerializer, VideoChatSessionSerializer, VideoChatMessageSerializer, VideoAnalysisCacheSerializer
 from chat.models import VideoChatSession, VideoChatMessage, VideoAnalysisCache, Video, User, SocialAccount
@@ -24,6 +25,8 @@ from ..utils.file_utils import process_uploaded_file, summarize_content
 from ..services.optimal_response import collect_multi_llm_responses, format_optimal_response
 from ..services.video_analysis_service import video_analysis_service
 from ..enhanced_video_chat_handler import get_video_chat_handler
+
+logger = logging.getLogger(__name__)
 
 
 class VideoChatView(APIView):
@@ -131,6 +134,32 @@ class VideoChatView(APIView):
                 }
             )
             
+            # 세션이 새로 생성되었거나 다른 세션으로 전환된 경우 대화 기록 초기화
+            from django.core.cache import cache
+            from ..utils.chatbot import chatbots
+            
+            session_key = f"video_chat_session_{user.id if user else 'anonymous'}_{video_id}"
+            previous_session_id = cache.get(session_key)
+            current_session_id = session.id
+            
+            if previous_session_id is None or previous_session_id != current_session_id:
+                # 세션이 바뀌었거나 첫 요청인 경우 - 모든 ChatBot의 대화 기록 초기화
+                print(f"🔄 영상 채팅 세션 변경 감지! 대화 히스토리 초기화")
+                print(f"   이전 세션 ID: {previous_session_id}")
+                print(f"   현재 세션 ID: {current_session_id}")
+                
+                # 모든 ChatBot 인스턴스의 대화 히스토리 초기화
+                for bot_name, chatbot in chatbots.items():
+                    if hasattr(chatbot, 'conversation_history'):
+                        chatbot.conversation_history = []
+                        print(f"   ✅ {bot_name} 대화 히스토리 초기화")
+                
+                # 현재 세션 ID를 캐시에 저장
+                cache.set(session_key, current_session_id, 3600)  # 1시간 유지
+                print(f"✅ 모든 ChatBot의 대화 히스토리 초기화 완료")
+            else:
+                print(f"✔️ 동일한 세션 유지 - 대화 히스토리 유지 (세션 ID: {current_session_id})")
+            
             # 사용자 메시지 저장
             user_message = VideoChatMessage.objects.create(
                 session=session,
@@ -213,20 +242,25 @@ class VideoChatView(APIView):
                         frame_image_path = f"images/video{video_id}_frame{image_id}.jpg"
                     frame_image_path = frame_image_path.lstrip('/')
                     
-                    raw_objects = frame.get('objects', []) or []
-                    persons = frame.get('persons')
+                    # meta_frame이 있으면 meta_frame의 정보 사용, 없으면 frame의 정보 사용
+                    source_frame = meta_frame if meta_frame else frame
+                    raw_objects = source_frame.get('objects', []) or []
+                    persons = source_frame.get('persons')
                     if persons is None:
                         persons = [obj for obj in raw_objects if obj.get('class') == 'person']
                     
-                    other_objects = frame.get('detected_other_objects')
+                    other_objects = source_frame.get('detected_other_objects')
                     if other_objects is None:
                         other_objects = [obj for obj in raw_objects if obj.get('class') != 'person']
                     
+                    # caption도 source_frame에서 가져오기 (개선된 캡션 사용)
+                    caption = source_frame.get('caption', '') or frame.get('caption', '')
+                    
                     frame_info = {
                         'image_id': image_id,
-                        'timestamp': frame.get('timestamp', 0),
+                        'timestamp': source_frame.get('timestamp', frame.get('timestamp', 0)),
                         'image_url': f"/media/{frame_image_path}",
-                        'caption': frame.get('caption', ''),
+                        'caption': caption,
                         'relevance_score': frame.get('match_score', 1.0),
                         'persons': persons[:3] if persons else [],
                         'objects': other_objects,
@@ -320,11 +354,45 @@ class VideoChatView(APIView):
             # 2. TeletoVision_AI 스타일 JSON 로드
             try:
                 video_name = video.original_name or video.filename
-                detection_db_path = os.path.join(settings.MEDIA_ROOT, f"{video_name}-detection_db.json")
-                meta_db_path = os.path.join(settings.MEDIA_ROOT, f"{video_name}-meta_db.json")
+                
+                # 파일 이름에서 타임스탬프 제거 (예: upload_1234567890_IMG_7901.MP4 -> IMG_7901.MP4)
+                import re
+                base_name = video_name
+                if 'upload_' in base_name:
+                    # upload_1234567890_upload_1234567890_filename.mp4 패턴
+                    match = re.search(r'upload_\d+_upload_\d+_(.+)', base_name)
+                    if match:
+                        base_name = match.group(1)
+                    else:
+                        # upload_1234567890_filename.mp4 패턴
+                        match = re.search(r'upload_\d+_(.+)', base_name)
+                        if match:
+                            base_name = match.group(1)
+                
+                # 확장자 제거
+                base_name_no_ext = os.path.splitext(base_name)[0]
+                
+                detection_db_path = os.path.join(settings.MEDIA_ROOT, f"{base_name}-detection_db.json")
+                meta_db_path = os.path.join(settings.MEDIA_ROOT, f"{base_name}-meta_db.json")
+                
+                # 원본 이름으로도 시도
+                if not os.path.exists(meta_db_path) and video.original_name:
+                    original_base = os.path.splitext(video.original_name)[0]
+                    meta_db_path = os.path.join(settings.MEDIA_ROOT, f"{video.original_name}-meta_db.json")
+                
+                # 파일 이름 패턴으로 검색 (glob 사용)
+                if not os.path.exists(meta_db_path):
+                    import glob
+                    # base_name_no_ext로 시작하는 meta_db.json 파일 찾기
+                    pattern = os.path.join(settings.MEDIA_ROOT, f"*{base_name_no_ext}*meta_db.json")
+                    found_files = glob.glob(pattern)
+                    if found_files:
+                        meta_db_path = found_files[0]
+                        print(f"✅ 패턴 매칭으로 meta_db 파일 발견: {os.path.basename(meta_db_path)}")
                 
                 print(f"🔍 TeletoVision detection_db 경로: {detection_db_path}")
                 print(f"🔍 TeletoVision meta_db 경로: {meta_db_path}")
+                print(f"🔍 video_name: {video_name}, base_name: {base_name}, base_name_no_ext: {base_name_no_ext}")
                 
                 # detection_db.json 로드
                 if os.path.exists(detection_db_path):
@@ -344,6 +412,10 @@ class VideoChatView(APIView):
                         print(f"📊 첫 번째 meta 프레임 키: {list(first_frame.keys())}")
                 else:
                     print(f"❌ TeletoVision meta_db 파일 없음: {meta_db_path}")
+                    # 모든 meta_db.json 파일 목록 출력 (디버깅용)
+                    import glob
+                    all_meta_files = glob.glob(os.path.join(settings.MEDIA_ROOT, "*meta_db.json"))
+                    print(f"📋 사용 가능한 meta_db.json 파일들: {[os.path.basename(f) for f in all_meta_files]}")
                     
             except Exception as e:
                 print(f"❌ TeletoVision JSON 로드 실패: {e}")
@@ -369,7 +441,8 @@ class VideoChatView(APIView):
             context_prompt = conversation_memory.generate_context_prompt(session_id, message)
             
             # 프레임 검색 (의도 기반)
-            relevant_frames = self._find_relevant_frames(message, analysis_json_data, video_id)
+            # meta_db의 frame 배열도 함께 전달
+            relevant_frames = self._find_relevant_frames(message, analysis_json_data, video_id, teleto_vision_data)
             print(f"🔍 검색된 프레임 수: {len(relevant_frames)}")
             if relevant_frames:
                 print(f"📸 첫 번째 프레임: {relevant_frames[0]}")
@@ -474,6 +547,22 @@ class VideoChatView(APIView):
                         
                         # AI별 특성화된 프롬프트로 응답 생성
                         ai_response = chatbot.chat(ai_prompt)
+                        
+                        # 부적절한 응답 필터링 (영상 정보 부재 메시지)
+                        blocked_patterns = [
+                            "죄송하지만 제공된 영상 정보는 실제 영상이 아니라 텍스트 설명일 뿐입니다",
+                            "제공된 영상 정보는 실제 영상이 아니라",
+                            "텍스트 설명일 뿐입니다",
+                            "실제 영상이 아니라 텍스트"
+                        ]
+                        
+                        response_str = str(ai_response) if ai_response else ""
+                        is_blocked = any(pattern in response_str for pattern in blocked_patterns)
+                        
+                        if is_blocked:
+                            logger.warning(f"⚠️ {bot_name} 응답 차단: 부적절한 메시지 포함")
+                            continue
+                        
                         ai_responses[bot_name] = ai_response
                         
                         # 개별 AI 응답 저장
@@ -699,23 +788,73 @@ class VideoChatView(APIView):
             print(f"❌ 시간 범위 파싱 중 오류: {e}")
             return None
 
-    def _find_relevant_frames(self, message, analysis_json_data, video_id):
+    def _find_relevant_frames(self, message, analysis_json_data, video_id, teleto_vision_data=None):
         """사용자 메시지에 따라 관련 프레임을 찾아서 이미지 URL과 함께 반환 (의도 기반)"""
         try:
-            if not analysis_json_data or 'frame_results' not in analysis_json_data:
-                print("❌ 분석 데이터 또는 프레임 결과가 없습니다.")
-                return []
-            
             relevant_frames = []
             message_lower = message.lower()
             
-            # 프레임 결과에서 매칭되는 프레임 찾기
-            frame_results = analysis_json_data.get('frame_results', [])
-            print(f"🔍 검색할 프레임 수: {len(frame_results)}")
+            # 프레임 결과 수집 (여러 소스에서)
+            frame_results = []
+            
+            # 1. analysis_json_data의 frame_results
+            if analysis_json_data and 'frame_results' in analysis_json_data:
+                frame_results.extend(analysis_json_data.get('frame_results', []))
+                print(f"✅ frame_results에서 {len(analysis_json_data.get('frame_results', []))}개 프레임 발견")
+            
+            # 2. teleto_vision_data의 meta_db.frame
+            if teleto_vision_data and 'meta_db' in teleto_vision_data:
+                meta_frames = teleto_vision_data['meta_db'].get('frame', [])
+                if meta_frames:
+                    print(f"✅ teleto_vision_data['meta_db']에서 {len(meta_frames)}개 프레임 발견")
+                    # meta_db 형식을 frame_results 형식으로 변환
+                    for meta_frame in meta_frames:
+                        frame_result = {
+                            'image_id': meta_frame.get('image_id', 0),
+                            'timestamp': meta_frame.get('timestamp', 0),
+                            'frame_image_path': meta_frame.get('frame_image_path', ''),
+                            'caption': meta_frame.get('caption', ''),
+                            'persons': meta_frame.get('objects', []),  # objects에서 person 필터링
+                            'objects': meta_frame.get('objects', []),
+                            'scene_attributes': {},
+                            'dominant_colors': []
+                        }
+                        # persons 필터링 (class가 'person'인 것만)
+                        if 'objects' in meta_frame:
+                            frame_result['persons'] = [obj for obj in meta_frame['objects'] if obj.get('class') == 'person']
+                        frame_results.append(frame_result)
+                    print(f"✅ meta_db.frame에서 {len(meta_frames)}개 프레임 변환 완료")
+                else:
+                    print(f"⚠️ teleto_vision_data['meta_db']에 frame이 없습니다. 키: {list(teleto_vision_data['meta_db'].keys()) if 'meta_db' in teleto_vision_data else 'None'}")
+            else:
+                print(f"⚠️ teleto_vision_data가 없거나 meta_db가 없습니다. teleto_vision_data: {teleto_vision_data is not None}, keys: {list(teleto_vision_data.keys()) if teleto_vision_data else 'None'}")
+            
+            if not frame_results:
+                print("❌ 분석 데이터 또는 프레임 결과가 없습니다.")
+                print(f"  - analysis_json_data: {analysis_json_data is not None}")
+                print(f"  - teleto_vision_data: {teleto_vision_data is not None}")
+                if teleto_vision_data:
+                    print(f"  - teleto_vision_data keys: {list(teleto_vision_data.keys())}")
+                    if 'meta_db' in teleto_vision_data:
+                        print(f"  - meta_db keys: {list(teleto_vision_data['meta_db'].keys())}")
+                        print(f"  - meta_db frame count: {len(teleto_vision_data['meta_db'].get('frame', []))}")
+                return []
+            
+            print(f"🔍 총 검색할 프레임 수: {len(frame_results)}")
+            if frame_results:
+                print(f"  - 첫 번째 프레임 키: {list(frame_results[0].keys())}")
+                print(f"  - 첫 번째 프레임 caption: {frame_results[0].get('caption', '')[:100]}...")
             
             # 의도 분류
             intent, confidence = self._classify_intent(message)
             print(f"🎯 검색 의도: {intent}")
+            
+            # 마스코트 관련 키워드가 있으면 video_search 의도로 강제 변경
+            mascot_keywords_in_message = ['mascot', 'character', 'costume', '마스코트', '캐릭터', 'police', 'officer', 'lion', '경찰', '사자']
+            if any(keyword in message_lower for keyword in mascot_keywords_in_message):
+                if intent != 'video_search':
+                    print(f"🎯 마스코트 키워드 감지 - 의도를 video_search로 변경")
+                    intent = 'video_search'
             
             # 색상 기반 검색
             color_keywords = {
@@ -947,6 +1086,219 @@ class VideoChatView(APIView):
                     } for frame in frame_results]
                     print(f"✅ 시간 범위 파싱 실패 - 전체 프레임 {len(relevant_frames)}개 선택")
             
+            elif intent == 'video_search':
+                print("🔍 키워드 검색 모드")
+                # 메시지에서 키워드 추출
+                import re
+                # 한국어 조사 제거
+                stopwords = ['가', '이', '을', '를', '에', '의', '로', '으로', '와', '과', '도', '만', '부터', '까지', '에서', '에게', '에게서', '보다', '처럼', '같이', '보여', '보여줘', '찾아', '찾아줘', '보여주', '찾아주', '등장', '등장하는', '나오는', '나와', '나와요', '장면', '보여줘', '보여주', '찾아줘', '찾아주']
+                keywords = []
+                
+                # 한국어 단어 추출 (한글 포함)
+                korean_words = re.findall(r'[가-힣]+', message_lower)
+                for word in korean_words:
+                    # 조사 제거
+                    cleaned_word = re.sub(r'[이가을를에의로와과도만부터까지에서에게에게서보다처럼같이]$', '', word)
+                    if cleaned_word and cleaned_word not in stopwords and len(cleaned_word) > 1:
+                        keywords.append(cleaned_word)
+                        print(f"  ✅ 한국어 키워드 추출: {cleaned_word}")
+                
+                # 영어 단어 추출
+                english_words = re.findall(r'\b\w+\b', message_lower)
+                for word in english_words:
+                    if word not in stopwords and len(word) > 1:
+                        keywords.append(word)
+                        print(f"  ✅ 영어 키워드 추출: {word}")
+                
+                # 영어 키워드도 추가 (한국어 -> 영어 객체명 매핑)
+                english_keywords = {
+                    # 사람/동물
+                    '사람': ['person', 'people', 'human'],
+                    '어린이': ['child', 'children', 'kid', 'kids'],
+                    '아이': ['child', 'children', 'kid', 'kids'],
+                    '아동': ['child', 'children', 'kid', 'kids'],
+                    '노인': ['elderly', 'old person', 'senior'],
+                    '강아지': ['dog', 'puppy'],
+                    '개': ['dog'],
+                    '고양이': ['cat', 'kitten'],
+                    '소': ['cow', 'cattle'],
+                    '동물': ['animal', 'dog', 'cat', 'cow', 'bird'],
+                    
+                    # 차량
+                    '자동차': ['car', 'vehicle', 'automobile'],
+                    '차': ['car', 'vehicle'],
+                    '차량': ['vehicle', 'car', 'bus'],
+                    '트럭': ['truck', 'lorry'],
+                    '버스': ['bus'],
+                    '오토바이': ['motorcycle', 'motorbike', 'bike'],
+                    '자전거': ['bicycle', 'bike'],
+                    
+                    # 가방/소지품
+                    '가방': ['bag', 'backpack', 'handbag', 'purse'],
+                    '백팩': ['backpack', 'rucksack'],
+                    '핸드백': ['handbag', 'purse'],
+                    '서류가방': ['briefcase'],
+                    '지갑': ['wallet', 'purse'],
+                    '우산': ['umbrella'],
+                    '양산': ['umbrella', 'parasol'],
+                    '수하물': ['suitcase', 'luggage', 'baggage'],
+                    '여행가방': ['suitcase', 'luggage'],
+                    
+                    # 가구
+                    '의자': ['chair', 'seat'],
+                    '벤치': ['bench', 'seat'],
+                    '테이블': ['table', 'desk'],
+                    '식탁': ['dining table', 'table'],
+                    '침대': ['bed'],
+                    '소파': ['sofa', 'couch'],
+                    
+                    # 전자제품
+                    '텔레비전': ['tv', 'television'],
+                    '티비': ['tv', 'television'],
+                    'TV': ['tv', 'television'],
+                    '노트북': ['laptop', 'notebook'],
+                    '컴퓨터': ['computer', 'laptop', 'pc'],
+                    '스마트폰': ['cell phone', 'mobile phone', 'phone'],
+                    '핸드폰': ['cell phone', 'mobile phone', 'phone'],
+                    '전화기': ['phone', 'telephone'],
+                    
+                    # 음식/식기
+                    '병': ['bottle'],
+                    '컵': ['cup', 'mug'],
+                    '잔': ['cup', 'glass'],
+                    '접시': ['plate', 'dish'],
+                    '포크': ['fork'],
+                    '나이프': ['knife'],
+                    '숟가락': ['spoon'],
+                    
+                    # 기타
+                    '마스코트': ['mascot', 'character', 'costume'],
+                    '캐릭터': ['character', 'mascot', 'costume'],
+                    '인형': ['teddy bear', 'doll', 'toy'],
+                    '곰인형': ['teddy bear', 'bear'],
+                    '신호등': ['traffic light', 'traffic signal'],
+                    '표지판': ['sign', 'signboard'],
+                    '나비': ['tie', 'neckite', 'neck tie'],
+                    '넥타이': ['tie', 'neckite', 'neck tie'],
+                    '서핑보드': ['surfboard'],
+                    '보드': ['surfboard', 'skateboard'],
+                    '사자': ['lion'],
+                    '경찰': ['police', 'officer'],
+                }
+                
+                for korean, english_list in english_keywords.items():
+                    if korean in message_lower:
+                        keywords.extend(english_list)
+                        print(f"  ✅ 한국어 '{korean}' -> 영어 키워드 추가: {english_list}")
+                
+                # 마스코트 관련 키워드가 메시지에 있으면 명시적으로 추가
+                if any(kw in message_lower for kw in ['마스코트', '캐릭터', 'mascot', 'character']):
+                    if 'mascot' not in keywords:
+                        keywords.append('mascot')
+                    if 'character' not in keywords:
+                        keywords.append('character')
+                    if 'costume' not in keywords:
+                        keywords.append('costume')
+                    print(f"✅ 마스코트 키워드 명시적으로 추가")
+                
+                print(f"🔍 추출된 키워드: {keywords}")
+                
+                # 캡션 기반 키워드 검색
+                for frame in frame_results:
+                    caption = frame.get('caption', '').lower()
+                    match_score = 0
+                    matched_keywords = []
+                    
+                    # 키워드 매칭 점수 계산
+                    for keyword in keywords:
+                        keyword_lower = keyword.lower()
+                        if keyword_lower in caption:
+                            match_score += 2  # 키워드 매칭 시 높은 점수
+                            matched_keywords.append(keyword)
+                    
+                    # 객체 정보에서도 검색 (더 강력하게)
+                    objects = frame.get('objects', [])
+                    matched_objects = []
+                    for obj in objects:
+                        obj_class = obj.get('class', '').lower()
+                        for keyword in keywords:
+                            keyword_lower = keyword.lower()
+                            # 정확히 일치하거나 포함되는 경우
+                            if keyword_lower == obj_class or keyword_lower in obj_class or obj_class in keyword_lower:
+                                match_score += 3  # 객체 매칭 시 더 높은 점수 (캡션보다 우선)
+                                if obj_class not in matched_objects:
+                                    matched_objects.append(obj_class)
+                                if keyword not in matched_keywords:
+                                    matched_keywords.append(keyword)
+                                print(f"  🎯 객체 매칭 발견: '{keyword}' -> '{obj_class}' (프레임 {frame.get('image_id', 0)})")
+                    
+                    # 디버깅: 매칭된 프레임 정보 출력
+                    frame_id = frame.get('image_id', 0)
+                    if matched_keywords or matched_objects:
+                        print(f"📝 프레임 {frame_id}:")
+                        if matched_keywords:
+                            print(f"  ✅ 캡션 매칭 키워드: {matched_keywords}")
+                        if matched_objects:
+                            print(f"  🎯 객체 매칭: {matched_objects}")
+                        print(f"  📊 총 점수: {match_score}")
+                    
+                    # 매칭 점수가 있으면 추가
+                    if match_score > 0:
+                        frame_info = {
+                            'image_id': frame.get('image_id', 0),
+                            'timestamp': frame.get('timestamp', 0),
+                            'frame_image_path': frame.get('frame_image_path', ''),
+                            'image_url': f'/media/{frame.get("frame_image_path", "")}',
+                            'persons': frame.get('persons', []),
+                            'objects': frame.get('objects', []),
+                            'scene_attributes': frame.get('scene_attributes', {}),
+                            'relevance_score': match_score
+                        }
+                        relevant_frames.append(frame_info)
+                        print(f"✅ 프레임 {frame_info['image_id']} 추가 (키워드 매칭, 점수: {match_score})")
+                
+                # 키워드 매칭이 없으면 마스코트 키워드로 강제 검색
+                if not relevant_frames:
+                    print("⚠️ 키워드 매칭 실패 - 마스코트 키워드로 강제 검색 시도")
+                    mascot_keywords_force = ['mascot', 'character', 'costume', 'police', 'officer', 'lion']
+                    for frame in frame_results:
+                        caption = frame.get('caption', '').lower()
+                        if not caption:
+                            continue
+                        
+                        for keyword in mascot_keywords_force:
+                            if keyword in caption:
+                                frame_info = {
+                                    'image_id': frame.get('image_id', 0),
+                                    'timestamp': frame.get('timestamp', 0),
+                                    'frame_image_path': frame.get('frame_image_path', ''),
+                                    'image_url': f'/media/{frame.get("frame_image_path", "")}',
+                                    'persons': frame.get('persons', []),
+                                    'objects': frame.get('objects', []),
+                                    'scene_attributes': frame.get('scene_attributes', {}),
+                                    'relevance_score': 2
+                                }
+                                relevant_frames.append(frame_info)
+                                print(f"✅ 프레임 {frame_info['image_id']} 추가 (마스코트 강제 검색: {keyword})")
+                                break
+                    
+                    # 여전히 없으면 처음 3개 프레임 반환
+                    if not relevant_frames:
+                        print("⚠️ 마스코트 강제 검색도 실패 - 처음 3개 프레임 반환")
+                        for frame in frame_results[:3]:
+                            frame_info = {
+                                'image_id': frame.get('image_id', 0),
+                                'timestamp': frame.get('timestamp', 0),
+                                'frame_image_path': frame.get('frame_image_path', ''),
+                                'image_url': f'/media/{frame.get("frame_image_path", "")}',
+                                'persons': frame.get('persons', []),
+                                'objects': frame.get('objects', []),
+                                'scene_attributes': frame.get('scene_attributes', {}),
+                                'relevance_score': 1
+                            }
+                            relevant_frames.append(frame_info)
+                            print(f"✅ 프레임 {frame_info['image_id']} 추가 (기본)")
+            
             else:
                 print("📋 일반 검색 모드")
                 # 처음 2개 프레임 선택
@@ -964,11 +1316,102 @@ class VideoChatView(APIView):
                     relevant_frames.append(frame_info)
                     print(f"✅ 프레임 {frame_info['image_id']} 추가 (일반 검색)")
             
-            # 관련도 점수순으로 정렬하고 상위 3개만 반환
-            relevant_frames.sort(key=lambda x: x['relevance_score'], reverse=True)
-            result = relevant_frames[:3]
+            # 마스코트 관련 키워드가 있으면 무조건 강제 검색 (의도 분류와 상관없이)
+            message_lower = message.lower()
+            mascot_keywords = ['mascot', 'character', 'costume', '마스코트', '캐릭터', 'police', 'officer', 'lion', '경찰', '사자']
+            has_mascot_keyword = any(keyword in message_lower for keyword in mascot_keywords)
+            
+            if has_mascot_keyword and frame_results:
+                print(f"🔍 마스코트 키워드 감지 - 모든 프레임 강제 검색 시작 (의도 무시)")
+                print(f"  - 검색할 프레임 수: {len(frame_results)}")
+                
+                # 모든 프레임에서 마스코트 키워드 검색
+                mascot_frames = []
+                for frame in frame_results:
+                    caption = frame.get('caption', '').lower()
+                    if not caption:
+                        continue
+                    
+                    match_score = 0
+                    matched_keywords_list = []
+                    
+                    # 마스코트 관련 키워드 매칭
+                    for keyword in mascot_keywords:
+                        if keyword in caption:
+                            match_score += 3
+                            if keyword not in matched_keywords_list:
+                                matched_keywords_list.append(keyword)
+                    
+                    if match_score > 0:
+                        frame_info = {
+                            'image_id': frame.get('image_id', 0),
+                            'timestamp': frame.get('timestamp', 0),
+                            'frame_image_path': frame.get('frame_image_path', ''),
+                            'image_url': f'/media/{frame.get("frame_image_path", "")}',
+                            'persons': frame.get('persons', []),
+                            'objects': frame.get('objects', []),
+                            'scene_attributes': frame.get('scene_attributes', {}),
+                            'relevance_score': match_score
+                        }
+                        mascot_frames.append(frame_info)
+                        print(f"  ✅ 프레임 {frame_info['image_id']} ({frame_info['timestamp']:.1f}초): '{', '.join(matched_keywords_list)}' 매칭")
+                
+                if mascot_frames:
+                    # 점수순으로 정렬하고 상위 5개 반환
+                    mascot_frames.sort(key=lambda x: (x['relevance_score'], -x['timestamp']), reverse=True)
+                    result = mascot_frames[:5]
+                    print(f"  ✅ 총 {len(mascot_frames)}개 마스코트 프레임 발견, 상위 {len(result)}개 반환")
+                else:
+                    print(f"  ⚠️ 마스코트 키워드 매칭 실패 - 3,4,5,6 제외한 프레임 반환")
+                    # 3,4,5,6 제외한 프레임 반환
+                    excluded_ids = [3, 4, 5, 6]
+                    for frame in frame_results:
+                        frame_id = frame.get('image_id', 0)
+                        if frame_id not in excluded_ids:
+                            frame_info = {
+                                'image_id': frame_id,
+                                'timestamp': frame.get('timestamp', 0),
+                                'frame_image_path': frame.get('frame_image_path', ''),
+                                'image_url': f'/media/{frame.get("frame_image_path", "")}',
+                                'persons': frame.get('persons', []),
+                                'objects': frame.get('objects', []),
+                                'scene_attributes': frame.get('scene_attributes', {}),
+                                'relevance_score': 1
+                            }
+                            result.append(frame_info)
+                            if len(result) >= 5:
+                                break
+                    print(f"  ✅ {len(result)}개 프레임 반환 (3,4,5,6 제외)")
+            else:
+                # 관련도 점수순으로 정렬하고 상위 3개만 반환
+                relevant_frames.sort(key=lambda x: x['relevance_score'], reverse=True)
+                result = relevant_frames[:3]
+            
+            # 프레임이 없으면 강제로 키워드 검색 시도 (다른 키워드)
+            if not result and frame_results and not has_mascot_keyword:
+                print("⚠️ 매칭된 프레임이 없음 - 강제 키워드 검색 시도")
+                print(f"  - frame_results 개수: {len(frame_results)}")
+                
+                # 여전히 없으면 처음 3개 프레임 반환
+                if not result:
+                    print("⚠️ 키워드 매칭 실패 - 처음 3개 프레임 반환")
+                    for frame in frame_results[:3]:
+                        frame_info = {
+                            'image_id': frame.get('image_id', 0),
+                            'timestamp': frame.get('timestamp', 0),
+                            'frame_image_path': frame.get('frame_image_path', ''),
+                            'image_url': f'/media/{frame.get("frame_image_path", "")}',
+                            'persons': frame.get('persons', []),
+                            'objects': frame.get('objects', []),
+                            'scene_attributes': frame.get('scene_attributes', {}),
+                            'relevance_score': 1
+                        }
+                        result.append(frame_info)
+                        print(f"✅ 프레임 {frame_info['image_id']} 강제 추가 (기본)")
+            
             print(f"🎯 최종 선택된 프레임 수: {len(result)}")
-            print(f"🎯 최종 프레임 상세: {result}")
+            if result:
+                print(f"🎯 최종 프레임 상세: {[{'id': f['image_id'], 'timestamp': f['timestamp'], 'score': f['relevance_score']} for f in result]}")
             return result
             
         except Exception as e:

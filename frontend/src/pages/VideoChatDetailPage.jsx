@@ -83,7 +83,8 @@ const MessageFramePreview = ({ frames = [], onFrameClick, maxInitial = FRAME_PRE
           )}
         </div>
         
-        <div className="p-3">
+        {/* 프레임 정보 숨김 처리 */}
+        {/* <div className="p-3">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-2">
               <div className="flex items-center bg-blue-50 text-blue-700 px-2 py-1 rounded-full text-xs font-medium">
@@ -122,7 +123,7 @@ const MessageFramePreview = ({ frames = [], onFrameClick, maxInitial = FRAME_PRE
               )}
             </div>
           )}
-        </div>
+        </div> */}
       </div>
     </div>
   );
@@ -688,7 +689,26 @@ const VideoChatDetailPage = () => {
                       <div className="aiofai-bot-message optimal-response">
                         <div className="whitespace-pre-wrap">{message.content}</div>
                         <div className="text-xs opacity-60 mt-2">
-                          {message.created_at ? new Date(message.created_at).toLocaleTimeString() : new Date().toLocaleTimeString()}
+                          {message.created_at 
+                            ? (() => {
+                                const date = new Date(message.created_at);
+                                // UTC 시간을 KST로 변환 (UTC+9)
+                                const kstDate = new Date(date.getTime() + (9 * 60 * 60 * 1000));
+                                return kstDate.toLocaleString('ko-KR', { 
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  second: '2-digit',
+                                  hour12: true
+                                });
+                              })()
+                            : new Date().toLocaleString('ko-KR', { 
+                                timeZone: 'Asia/Seoul',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit',
+                                hour12: true
+                              })
+                          }
                         </div>
                       </div>
                     </div>
@@ -701,12 +721,36 @@ const VideoChatDetailPage = () => {
                   <div key={`${modelId}-${index}`} className={`flex ${isUser ? "justify-end" : "justify-start"} mb-4`}>
                     <div className={`${isUser ? "aiofai-user-message" : "aiofai-bot-message"} ${isOptimal || isSpecialCommand ? "optimal-response" : ""}`}>
                       {isOptimal || isSpecialCommand ? (
-                        <OptimalResponseRenderer 
-                          content={message.content} 
-                          relevantFrames={message.relevant_frames}
-                          onFrameClick={handleFrameClick}
-                          similarityData={message.similarityData}
-                        />
+                        <div>
+                          <OptimalResponseRenderer 
+                            content={message.content} 
+                            relevantFrames={message.relevant_frames}
+                            onFrameClick={handleFrameClick}
+                            similarityData={message.similarityData}
+                          />
+                          <div className="text-xs opacity-60 mt-2">
+                            {message.created_at 
+                              ? (() => {
+                                  const date = new Date(message.created_at);
+                                  // UTC 시간을 KST로 변환 (UTC+9)
+                                  const kstDate = new Date(date.getTime() + (9 * 60 * 60 * 1000));
+                                  return kstDate.toLocaleString('ko-KR', { 
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit',
+                                    hour12: true
+                                  });
+                                })()
+                              : new Date().toLocaleString('ko-KR', { 
+                                  timeZone: 'Asia/Seoul',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  second: '2-digit',
+                                  hour12: true
+                                })
+                            }
+                          </div>
+                        </div>
                       ) : (
                         <div>
                           <div className="whitespace-pre-wrap">{message.content}</div>
@@ -727,7 +771,26 @@ const VideoChatDetailPage = () => {
                           )}
                           
                           <div className="text-xs opacity-60 mt-2">
-                            {message.created_at ? new Date(message.created_at).toLocaleTimeString() : new Date().toLocaleTimeString()}
+                            {message.created_at 
+                              ? (() => {
+                                  const date = new Date(message.created_at);
+                                  // UTC 시간을 KST로 변환 (UTC+9)
+                                  const kstDate = new Date(date.getTime() + (9 * 60 * 60 * 1000));
+                                  return kstDate.toLocaleString('ko-KR', { 
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit',
+                                    hour12: true
+                                  });
+                                })()
+                              : new Date().toLocaleString('ko-KR', { 
+                                  timeZone: 'Asia/Seoul',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  second: '2-digit',
+                                  hour12: true
+                                })
+                            }
                           </div>
                         </div>
                       )}

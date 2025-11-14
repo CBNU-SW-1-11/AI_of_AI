@@ -800,7 +800,13 @@ const VideoChatPage = () => {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-600">분석 시간</span>
-                  <span className="font-medium">{new Date().toLocaleTimeString()}</span>
+                  <span className="font-medium">{new Date().toLocaleString('ko-KR', { 
+                    timeZone: 'Asia/Seoul',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: true
+                  })}</span>
                 </div>
               </div>
             </div>
@@ -1112,8 +1118,8 @@ const VideoChatPage = () => {
                 </div>
               </div>
               
-              {/* 정보 패널 */}
-              <div className="p-3">
+              {/* 정보 패널 - 숨김 처리 */}
+              {/* <div className="p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center space-x-2">
                     <div className="flex items-center bg-blue-50 text-blue-700 px-2 py-1 rounded-full text-xs font-medium">
@@ -1134,26 +1140,23 @@ const VideoChatPage = () => {
                   </div>
                 </div>
                 
-                {/* 감지된 객체 정보 */}
-                {frame.persons && frame.persons.length > 0 && (
-                  <div className="flex items-center space-x-2">
-                    <div className="flex items-center bg-purple-50 text-purple-700 px-2 py-1 rounded-full text-xs font-medium">
-                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
-                      사람 {frame.persons.length}명
-                    </div>
-                    {frame.objects && frame.objects.length > 0 && (
-                      <div className="flex items-center bg-orange-50 text-orange-700 px-2 py-1 rounded-full text-xs font-medium">
-                        <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                        </svg>
-                        객체 {frame.objects.length}개
-                      </div>
-                    )}
+                <div className="flex items-center space-x-2">
+                  <div className="flex items-center bg-purple-50 text-purple-700 px-2 py-1 rounded-full text-xs font-medium">
+                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    사람 {frame.persons.length}명
                   </div>
-                )}
-              </div>
+                  {frame.objects && frame.objects.length > 0 && (
+                    <div className="flex items-center bg-orange-50 text-orange-700 px-2 py-1 rounded-full text-xs font-medium">
+                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                      </svg>
+                      객체 {frame.objects.length}개
+                    </div>
+                  )}
+                </div>
+              </div> */}
             </div>
           ))}
         </div>
@@ -1328,10 +1331,11 @@ const VideoChatPage = () => {
                   className="frame-card hover:border-blue-300 transition-colors duration-200 cursor-pointer"
                   onClick={() => onFrameSelect && onFrameSelect(frame)}
                 >
-                  <div className="frame-info">
+                  {/* 프레임 정보 숨김 처리 */}
+                  {/* <div className="frame-info">
                     <span className="frame-timestamp">⏰ {frame.timestamp.toFixed(1)}초</span>
                     <span className="frame-score">🎯 {frame.relevance_score}점</span>
-                  </div>
+                  </div> */}
                   <img
                     src={`${api.defaults.baseURL}${frame.image_url}`}
                     alt={`프레임 ${frame.image_id}`}
@@ -1341,7 +1345,8 @@ const VideoChatPage = () => {
                       e.target.style.display = 'none';
                     }}
                   />
-                  <div className="frame-tags">
+                  {/* 프레임 태그 숨김 처리 */}
+                  {/* <div className="frame-tags">
                     {frame.persons && frame.persons.length > 0 && (
                       <span className="frame-tag person-tag">
                         👤 사람 {frame.persons.length}명
@@ -1352,7 +1357,7 @@ const VideoChatPage = () => {
                         📦 객체 {frame.objects.length}개
                       </span>
                     )}
-                  </div>
+                  </div> */}
                 </div>
               ))}
             </div>
@@ -1618,7 +1623,22 @@ const VideoChatPage = () => {
                       <div className="aiofai-bot-message optimal-response">
                         <div className="whitespace-pre-wrap">{message.content}</div>
                         <div className="text-xs opacity-60 mt-2">
-                          {message.created_at ? new Date(message.created_at).toLocaleTimeString() : new Date().toLocaleTimeString()}
+                          {message.created_at 
+                            ? new Date(message.created_at).toLocaleString('ko-KR', { 
+                                timeZone: 'Asia/Seoul',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit',
+                                hour12: true
+                              })
+                            : new Date().toLocaleString('ko-KR', { 
+                                timeZone: 'Asia/Seoul',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit',
+                                hour12: true
+                              })
+                          }
                         </div>
                       </div>
                     </div>
@@ -1665,7 +1685,22 @@ const VideoChatPage = () => {
                           )}
                           
                           <div className="text-xs opacity-60 mt-2">
-                            {message.created_at ? new Date(message.created_at).toLocaleTimeString() : new Date().toLocaleTimeString()}
+                            {message.created_at 
+                              ? new Date(message.created_at).toLocaleString('ko-KR', { 
+                                  timeZone: 'Asia/Seoul',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  second: '2-digit',
+                                  hour12: true
+                                })
+                              : new Date().toLocaleString('ko-KR', { 
+                                  timeZone: 'Asia/Seoul',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  second: '2-digit',
+                                  hour12: true
+                                })
+                            }
                           </div>
                         </div>
                       )}
@@ -1808,9 +1843,9 @@ const VideoChatPage = () => {
       {isFrameModalOpen && selectedFrame && (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl">
-            {/* 모달 헤더 */}
+            {/* 모달 헤더 - 프레임 정보 숨김 처리 */}
             <div className="flex items-center justify-between p-4 border-b bg-gray-50">
-              <div className="flex items-center space-x-3">
+              {/* <div className="flex items-center space-x-3">
                 <div className="flex items-center bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-sm font-medium">
                   <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1826,7 +1861,8 @@ const VideoChatPage = () => {
                 <div className="text-sm text-gray-600">
                   프레임 #{selectedFrame.image_id}
                 </div>
-              </div>
+              </div> */}
+              <div></div>
               <button
                 onClick={() => setIsFrameModalOpen(false)}
                 className="p-2 hover:bg-gray-200 rounded-full transition-colors"
@@ -1841,7 +1877,7 @@ const VideoChatPage = () => {
             <div className="p-6">
               <div className="flex flex-col lg:flex-row gap-6">
                 {/* 이미지 */}
-                <div className="flex-1">
+                <div className="flex-1 w-full">
                   <div className="relative">
                     {/* bbox 오버레이 토글 버튼 */}
                     <div className="absolute top-2 right-2 z-10 flex gap-2">
@@ -1892,8 +1928,8 @@ const VideoChatPage = () => {
                   </div>
                 </div>
                 
-                {/* 정보 패널 */}
-                <div className="lg:w-80 space-y-4">
+                {/* 정보 패널 - 숨김 처리 */}
+                {/* <div className="lg:w-80 space-y-4">
                   <div>
                     <h3 className="text-lg font-semibold text-gray-800 mb-3">프레임 정보</h3>
                     <div className="space-y-2">
@@ -1912,15 +1948,13 @@ const VideoChatPage = () => {
                     </div>
                   </div>
                   
-                  {/* 감지된 객체 상세 정보 */}
-                  {selectedFrame.persons && selectedFrame.persons.length > 0 && (
-                    <div>
-                      <h4 className="text-md font-semibold text-gray-800 mb-2 flex items-center">
-                        <svg className="w-4 h-4 mr-2 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
-                        감지된 사람 ({selectedFrame.persons.length}명)
-                      </h4>
+                  <div>
+                    <h4 className="text-md font-semibold text-gray-800 mb-2 flex items-center">
+                      <svg className="w-4 h-4 mr-2 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      감지된 사람 ({selectedFrame.persons.length}명)
+                    </h4>
                       <div className="space-y-2">
                         {selectedFrame.persons.map((person, index) => (
                           <div key={index} className="bg-purple-50 rounded-lg p-3">
@@ -1968,7 +2002,7 @@ const VideoChatPage = () => {
                       </div>
                     </div>
                   )}
-                </div>
+                </div> */}
               </div>
             </div>
           </div>
